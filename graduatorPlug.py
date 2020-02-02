@@ -1,0 +1,13 @@
+from beets.plugins import BeetsPlugin
+from beets.ui import Subcommand
+from beets import config
+
+my_super_command = Subcommand('super', help='do something super')
+def say_hi(lib, opts, args):
+	print ("Hello everybody! I'm a plugin!")
+my_super_command.func = say_hi
+
+class SuperPlug(BeetsPlugin):
+    def commands(self):
+    	return [my_super_command]
+
