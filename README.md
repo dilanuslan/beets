@@ -6,9 +6,11 @@ This is my project for graduating from Istanbul Technical University Computer En
 
 We're dealing with such crazy times nowadays and hopefully we will leave these days behind with the least damage.
 
-I got out of my quarantine which lasted for 14 days and finally have the internet connection. There is no better way to spend these times dealing with the code, taking responsibility and taking the project to the next level.
+I have clearly seen that life is all about the things that happen while we do plans. So I need to take responsibility for my mistakes. The most important thing is to be grateful for each and every day of our lives. This quarantine process made me a totally new person. I'm not going to take this project and my school for granted. 
 
-I hope that in 6 months from today, I will read back this little note with a smile on my face and a joy in my heart.
+Hopefully, this time everything will work just fine and I will end up with a happy ending. 
+
+Please do something everyday to make your future-self proud and thankful.
 
 #StayHome #StaySafe 
 
