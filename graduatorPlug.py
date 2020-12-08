@@ -18,27 +18,22 @@ from beets.util.artresizer import ArtResizer #artresizer also belongs to beets a
 
 from beets.util import bytestring_path #these are used for setting the paths  
 
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup #BeautifulSoup will be used for fetching lyrics
 
-
-#do operations on a possible match for album cover such as the validation of the size
- 
 class Candidate(object):
     
     CANDIDATE_BAD = 0 #not usable
     CANDIDATE_EXACT = 1 #usable
-    MATCH_EXACT = 0 
+    MATCH_EXACT = 0 #exact match
 
-    #initializations
-
-    def __init__(self, log, path=None, url=None, source='', match=None, size=None):
-        self._log = log
-        self.path = path
-        self.url = url
-        self.source = source
-        self.check = None
-        self.match = match
-        self.size = size
+    def __init__(self, log, path=None, url=None, source='', match=None, size=None): #constructor for candidate image
+        self._log = log #for beetlogs.txt
+        self.path = path #path of the image
+        self.url = url #url of the image
+        self.source = source #source of the image (website)
+        self.check = None #checking whether the image is usable or not
+        self.match = match #result of checking 
+        self.size = size #size of the image
 
     #validations by the path and the size
 
@@ -59,19 +54,25 @@ class Candidate(object):
 #With *args, any number of extra arguments can be tacked on to your current formal parameters
 #**kwargs in function definitions in python is used to pass a keyworded, variable-length argument list. 
 
-def getLog(log, *args, **kwargs):
+def getLog(log, *args, **kwargs): #defining the requests 
     
     request_kwargs = kwargs #kwargs as being a dictionary that maps each keyword to the value that we pass alongside it.
     send_kwargs = {}
-    for arg in ('stream', 'verify', 'proxies', 'cert', 'timeout'): #cert = computer emergency response team
-        if arg in kwargs:
+
+    #stream = if False, the response content will be immediately downloaded
+    #verify = if True, the SSL cert will be verified.
+    #proxies = Dictionary mapping protocol to the URL of the proxy.
+    #cert = if String, path to ssl client cert file (.pem). If Tuple, (‘cert’, ‘key’) pair.
+    #timeout = How long to wait for the server to send data before giving up, as a float, or a (connect timeout, read timeout) tuple.
+
+    for arg in ('stream', 'verify', 'proxies', 'cert', 'timeout'): #these are some of the parameters of a request
+        if arg in kwargs: #if our request has one of these, we add it to send_kwargs
             send_kwargs[arg] = request_kwargs.pop(arg)
 
-    #Our special logging message parameter.
-    if 'message' in kwargs:
+    if 'message' in kwargs: #checking whether the special message is in kwargs or not
         message = kwargs.pop('message')
     else:
-        message = 'getting URL'
+        message = 'getting URL' #default message 
 
     req = requests.Request('GET', *args, **request_kwargs) #We require data from the web, so 'GET' is our main request method. 
 
@@ -85,8 +86,7 @@ def getLog(log, *args, **kwargs):
         log.debug('{}: {}', message, prepared.url)
         return s.send(prepared, **send_kwargs)
 
-class RequestLogger(object):
-    #Adds a Requests wrapper to the class that uses the logger
+class RequestLogger(object): #Adds a Requests wrapper to the class that uses the logger
 
     def request(self, *args, **kwargs):
         return getLog(self._log, *args, **kwargs)
@@ -94,17 +94,17 @@ class RequestLogger(object):
 
 ##### COVER ART SOURCES 
 
-#this is an initial class for initializations and logging
+#this is an initial class for further definitions and logging
 class CoverArtSource(RequestLogger):
     MATCHING_CRITERIA = ['default']
 
-    def __init__(self, log, config, match_by=None):
+    def __init__(self, log, config, match_by=None): #constructor
         self._log = log
         self._config = config
-        self.match_by = match_by or self.MATCHING_CRITERIA
+        self.match_by = match_by or self.MATCHING_CRITERIA #assign matching result or default definition
 
     def _candidate(self, **kwargs):
-        return Candidate(source=self, log=self._log, **kwargs)
+        return Candidate(source=self, log=self._log, **kwargs) 
 
 
 #The knowledge from this website is basically used in this part of the code: https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/MIME_types
@@ -112,8 +112,7 @@ class CoverArtSource(RequestLogger):
 class ArtSource(CoverArtSource):
     LOCAL_STR = 'remote'  #remote states that the source is not local 
 
-    def get_image(self, candidate, plugin):
-        #Downloads an image from an URL and checks whether it is an image or not. If so, returns a path to the downloaded image. Otherwise, returns None.
+    def get_image(self, candidate, plugin): #Downloads an image from an URL and checks whether it is an image or not. If so, returns a path to the downloaded image. Otherwise, returns None.
       
         if plugin.maxwidth:
             candidate.url = ArtResizer.shared.proxy_url(plugin.maxwidth, candidate.url) #Modifies an image URL according the method, returning a new URL. For WEBPROXY, a URL on the proxy server is returned. Otherwise, the URL is returned unmodified.
@@ -122,7 +121,7 @@ class ArtSource(CoverArtSource):
                 content_type = resp.headers.get('Content-Type', None) #content type should be either jpg or png
 
                 #Download the image to a temporary file. 
-                data = resp.iter_content(chunk_size=1024) #Iterates over the response data. 
+                data = resp.iter_content(chunk_size=1024) #Iterates over the response data. When stream=True is set on the request, this avoids reading the content at once into memory for large responses. The chunk size is the number of bytes it should read into memory. This is not necessarily the length of each item returned as decoding can take place. 
                 header = b'' #header will be a byte literal
                 for chunk in data:
                     header += chunk
@@ -131,18 +130,18 @@ class ArtSource(CoverArtSource):
                 else: #server could not return any data
                     return
 
-                real_ct = image_mime_type(header) #image/jpeg and image/png are our MIME(multipurpose internet mail extension) types
-                if real_ct is None:
-                    real_ct = content_type
+                realcontenttype = image_mime_type(header) #image/jpeg and image/png are our MIME(multipurpose internet mail extension) types
+                if realcontenttype is None:
+                    realcontenttype = content_type
 
-                if real_ct not in IMAGE_TYPES:
-                    self._log.debug('not a supported image: {}', real_ct or 'unknown content type')
+                if realcontenttype not in IMAGE_TYPES:
+                    self._log.debug('not a supported image: {}', realcontenttype or 'unknown content type')
                     return
 
-                extension = b'.' + IMAGE_TYPES[real_ct][0]
+                extension = b'.' + IMAGE_TYPES[realcontenttype][0]
 
-                if real_ct != content_type:
-                    self._log.warning('Server specified {}, but returned a {} image. Correcting the extension to {}', content_type, real_ct, extension)
+                if realcontenttype != content_type:
+                    self._log.warning('Server specified {}, but returned a {} image. Correcting the extension to {}', content_type, realcontenttype, extension)
 
                 with NamedTemporaryFile(suffix=extension, delete=False) as file:
                     file.write(header)  #write the first already loaded part of the image
@@ -155,8 +154,6 @@ class ArtSource(CoverArtSource):
         except (IOError, requests.RequestException, TypeError) as exc:
             self._log.debug('error fetching art: {}', exc)
             return
-
-
 
 
 class CoverArtArchive(ArtSource):
@@ -176,7 +173,7 @@ class CoverArtArchive(ArtSource):
 
 # Try each source in turn.
 
-SOURCES_ALL = [ 'coverart']
+SOURCES_ALL = ['coverart']
 
 ART_SOURCES = {
     'coverart': CoverArtArchive,  
@@ -266,11 +263,6 @@ class graduatorPlug(BeetsPlugin, RequestLogger):
 
             if self.src_removed:
                 task.prune(candidate.path)
-
-
-    def set_lyrics(self, album, )
-
-    # Manual album art fetching
 
 
     def commands(self):
