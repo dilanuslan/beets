@@ -1,11 +1,9 @@
 from __future__ import division  #it will change the / operator to mean true division throughout the module
 from beets import plugins #enables to use the plugins that already exists
-from beets import importer #The importer component is responsible for adding music to a library.
 from beets import ui #subcommand is defined under this library
 from beets import util #utilization library
 from beets import config #to be able to edit the configuration file of the application
 from beets.plugins import BeetsPlugin #importing beets plugin packet to be able to write a new plugin
-from beets.ui import Subcommand #library to build command line utilities with subcommands.
 
 import os #operating system support
 import re #regular expressions 
@@ -20,15 +18,11 @@ from beets.util.artresizer import ArtResizer #artresizer also belongs to beets a
 
 from beets.util import bytestring_path #these are used for setting the paths  
 
+from bs4 import BeautifulSoup
 
-IMAGE_TYPES = { #the retrieved images should be in these formats
-    'image/jpeg': [b'jpg', b'jpeg'], #b indicates byte literals
-    'image/png': [b'png']
-}
-IMAGE_EXTENSIONS = [img for imgs in IMAGE_TYPES.values() for img in imgs]
 
 #do operations on a possible match for album cover such as the validation of the size
-
+ 
 class Candidate(object):
     
     CANDIDATE_BAD = 0 #not usable
@@ -37,7 +31,7 @@ class Candidate(object):
 
     #initializations
 
-    def __init__(self, log, path=None, url=None, source=u'', match=None, size=None):
+    def __init__(self, log, path=None, url=None, source='', match=None, size=None):
         self._log = log
         self.path = path
         self.url = url
@@ -116,7 +110,7 @@ class CoverArtSource(RequestLogger):
 #The knowledge from this website is basically used in this part of the code: https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/MIME_types
 
 class ArtSource(CoverArtSource):
-    LOCAL_STR = u'remote'  #remote states that the source is not local u iindicates Unicode
+    LOCAL_STR = 'remote'  #remote states that the source is not local 
 
     def get_image(self, candidate, plugin):
         #Downloads an image from an URL and checks whether it is an image or not. If so, returns a path to the downloaded image. Otherwise, returns None.
@@ -142,31 +136,31 @@ class ArtSource(CoverArtSource):
                     real_ct = content_type
 
                 if real_ct not in IMAGE_TYPES:
-                    self._log.debug(u'not a supported image: {}', real_ct or u'unknown content type')
+                    self._log.debug('not a supported image: {}', real_ct or 'unknown content type')
                     return
 
                 extension = b'.' + IMAGE_TYPES[real_ct][0]
 
                 if real_ct != content_type:
-                    self._log.warning(u'Server specified {}, but returned a ' u'{} image. Correcting the extension ' u'to {}', content_type, real_ct, extension)
+                    self._log.warning('Server specified {}, but returned a {} image. Correcting the extension to {}', content_type, real_ct, extension)
 
                 with NamedTemporaryFile(suffix=extension, delete=False) as file:
                     file.write(header)  #write the first already loaded part of the image
                     for chunk in data:  #download the remaining part of the image
                         file.write(chunk)
-                self._log.debug(u'downloaded art to: {0}', util.displayable_path(file.name))
+                self._log.debug('downloaded art to: {0}', util.displayable_path(file.name))
                 candidate.path = util.bytestring_path(file.name)
                 return
 
         except (IOError, requests.RequestException, TypeError) as exc:
-            self._log.debug(u'error fetching art: {}', exc)
+            self._log.debug('error fetching art: {}', exc)
             return
 
-##SOURCES##
+
 
 
 class CoverArtArchive(ArtSource):
-    NAME = u"Cover Art Archive"
+    NAME = "Cover Art Archive"
     MATCHING_CRITERIA = ['release']
 
     if util.SNI_SUPPORTED: #server name indication
@@ -180,62 +174,20 @@ class CoverArtArchive(ArtSource):
         if 'release' in self.match_by and album.mb_albumid:
             yield self._candidate(url=self.URL.format(mbid=album.mb_albumid), match=Candidate.MATCH_EXACT)
 
-
-class GoogleImages(ArtSource):
-    NAME = u"Google Images"
-    URL = u'https://www.googleapis.com/customsearch/v1'
-
-    def __init__(self, *args, **kwargs):
-        super(GoogleImages, self).__init__(*args, **kwargs)
-        self.key = self._config['google_key'].get()
-        self.cx = self._config['google_engine'].get()
-
-    def get(self, album, plugin, paths):
-        #Return art URL from google custom search engine given an album title and interpreter.
-
-        if not (album.albumartist and album.album):
-            return
-
-        search_string = (album.albumartist + ',' + album.album).encode('utf-8') #search is done by the artist and the album name
-
-        try:
-            response = self.request(self.URL, params={
-                'key': self.key,
-                'cx': self.cx,
-                'q': search_string,
-                'searchType': 'image'
-            })
-        except requests.RequestException:
-            self._log.debug(u'google: error receiving response')
-            return
-
-        try:
-            data = response.json()
-            print(response)
-            print(data)
-        except ValueError:
-            self._log.debug(u'google: error loading response: {}'.format(response.text))
-            return
-
-        if 'error' in data:
-            reason = data['error']['errors'][0]['reason']
-            self._log.debug(u'google fetchart error: {0}', reason)
-            return
-
-        if 'items' in data.keys():
-            for item in data['items']:
-                yield self._candidate(url=item['link'], match=Candidate.MATCH_EXACT)
-
 # Try each source in turn.
 
-SOURCES_ALL = [ u'google', u'wikipedia', u'coverart']
+SOURCES_ALL = [ 'coverart']
 
 ART_SOURCES = {
-    u'google': GoogleImages,
-    u'coverart': CoverArtArchive,
-    u'wikipedia': Wikipedia,   
+    'coverart': CoverArtArchive,  
 }
 SOURCE_NAMES = {a: b for b, a in ART_SOURCES.items()}
+
+IMAGE_TYPES = { #the retrieved images should be in these formats
+    'image/jpeg': [b'jpg', b'jpeg'], #b indicates byte literals
+    'image/png': [b'png']
+}
+IMAGE_EXTENSIONS = [img for imgs in IMAGE_TYPES.values() for img in imgs]
 
 
 # PLUGIN LOGIC ###############################################################
@@ -246,11 +198,7 @@ class graduatorPlug(BeetsPlugin, RequestLogger):
     def __init__(self):
         super(graduatorPlug, self).__init__()
 
-        # Holds candidates corresponding to downloaded images between
-        # fetching them and placing them in the filesystem.
-        self.art_candidates = {}
-
-        self.config['google_key'].redact = True
+        self.art_candidates = {}  # Holds candidates corresponding to downloaded images between fetching them and placing them in the filesystem.
 
         self.maxwidth = self.config['maxwidth'].get(int)
 
@@ -261,23 +209,19 @@ class graduatorPlug(BeetsPlugin, RequestLogger):
 
         self.src_removed = (config['import']['delete'].get(bool) or config['import']['move'].get(bool))
 
-        if self.config['auto']:
+        if (self.config['auto']):
             # Enable two import hooks when fetching is enabled.
             self.import_stages = [self.graduatorPlug]
             self.register_listener('import_task_files', self.assign_art)
 
         available_sources = list(SOURCES_ALL)
-        if not self.config['google_key'].get() and \
-                u'google' in available_sources:
-            available_sources.remove(u'google')
+        
         available_sources = [(s, c)
                              for s in available_sources
                              for c in ART_SOURCES[s].MATCHING_CRITERIA]
-        sources = plugins.sanitize_pairs(
-            self.config['sources'].as_pairs(default_value='*'),
-            available_sources)
+        sources = plugins.sanitize_pairs(self.config['sources'].as_pairs(default_value='*'), available_sources)
 
-        if 'remote_priority' in self.config:
+        if ('remote_priority' in self.config):
             if self.config['remote_priority'].get(bool):
                 fs = []
                 others = []
@@ -308,7 +252,7 @@ class graduatorPlug(BeetsPlugin, RequestLogger):
         album.set_art(candidate.path, delete)
         if self.store_source:
             # store the source of the chosen artwork in a flexible field
-            self._log.debug(u"Storing art_source for {0.albumartist} - {0.album}", album)
+            self._log.debug("Storing art_source for {0.albumartist} - {0.album}", album)
             album.art_source = SOURCE_NAMES[type(candidate.source)]
         album.store()
 
@@ -323,13 +267,16 @@ class graduatorPlug(BeetsPlugin, RequestLogger):
             if self.src_removed:
                 task.prune(candidate.path)
 
+
+    def set_lyrics(self, album, )
+
     # Manual album art fetching
 
 
     def commands(self):
         cmd = ui.Subcommand('graduatorPlug', help='help Dilan to graduate from ITU CE')
         cmd.parser.add_option(
-            u'-f', u'--force', dest='force',
+            '-f', '--force', dest='force',
             action='store_true', default=False,
             help=u're-download art when already present'
         )
@@ -349,7 +296,7 @@ class graduatorPlug(BeetsPlugin, RequestLogger):
         for source in self.sources:
             
                 self._log.debug(
-                    u'trying source {0} for album {1.albumartist} - {1.album}',
+                    'trying source {0} for album {1.albumartist} - {1.album}',
                     SOURCE_NAMES[type(source)],
                     album,
                 )
@@ -370,16 +317,16 @@ class graduatorPlug(BeetsPlugin, RequestLogger):
         #Fetch album art for each of the albums. This implements the graduatorPlug CLI command.
         
         for album in albums:
-            if album.artpath and not force and os.path.isfile(album.artpath):
-                    message = ui.colorize('text_highlight_minor', u'has album art')
-                    self._log.info(u'{0}: {1}', album, message)  #prints out to command line 
+            if (album.artpath and not force and os.path.isfile(album.artpath)):
+                    message = ui.colorize('text_highlight_minor', 'has album art')
+                    self._log.info('{0}: {1}', album, message)  #prints out to command line 
             else:
                 local_paths = None if force else [album.path]
 
                 candidate = self.art_for_album(album, local_paths)
                 if candidate: #if the album art is found
                     self._set_art(album, candidate)
-                    message = ui.colorize('text_success', u'found album art') #print in green
+                    message = ui.colorize('text_success', 'found album art') #print in green
                 else:
-                    message = ui.colorize('text_error', u'no art found') #print in red
-                self._log.info(u'{0}: {1}', album, message) #prints out to command line
+                    message = ui.colorize('text_error', 'no art found') #print in red
+                self._log.info('{0}: {1}', album, message) #prints out to command line
