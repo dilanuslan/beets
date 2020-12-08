@@ -16,9 +16,7 @@ graduatorPlug:
     quality: 0
     cautious: False
     cover_names: ['cover', 'front', 'art', 'album', 'folder']
-    sources: ['coverart', 'google', 'wikipedia']
-    google_key: u'AIzaSyBb51-r1BX5jAseSO1RbN7Zi_tObJp8Rgc'
-    google_engine: u'003601479673604743105:qwuwbgnmqss'
+    sources: ['coverart']
     store_source: False
     high_resolution: False
 
