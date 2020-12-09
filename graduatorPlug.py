@@ -89,10 +89,7 @@ def getLog(log, *args, **kwargs): #defining the requests
 class RequestLogger(object): #Adds a Requests wrapper to the class that uses the logger
 
     def request(self, *args, **kwargs):
-        return getLog(self._log, *args, **kwargs)
-
-
-##### COVER ART SOURCES 
+        return getLog(self._log, *args, **kwargs) 
 
 #this is an initial class for further definitions and logging
 class CoverArtSource(RequestLogger):
@@ -130,55 +127,54 @@ class ArtSource(CoverArtSource):
                 else: #server could not return any data
                     return
 
-                realcontenttype = image_mime_type(header) #image/jpeg and image/png are our MIME(multipurpose internet mail extension) types
-                if realcontenttype is None:
+
+                #function definition of image_mime_type will be given in the final report
+
+                realcontenttype = image_mime_type(header) # This checks for a jpeg file with only the magic bytes (unrecognized by imghdr.what). imghdr.what returns none for that type of file, so_wider_test_jpeg is run in that case. It still returns None if it didn't match such a jpeg file.
+                if realcontenttype is None: #if image_mime_type return None, content type is assigned to realcontenttype
                     realcontenttype = content_type
 
-                if realcontenttype not in IMAGE_TYPES:
+                if realcontenttype not in IMAGE_TYPES: #if the content type is not jpg or png, it is logged
                     self._log.debug('not a supported image: {}', realcontenttype or 'unknown content type')
                     return
 
-                extension = b'.' + IMAGE_TYPES[realcontenttype][0]
+                extension = b'.' + IMAGE_TYPES[realcontenttype][0] #extension will be either .jpg or .png
 
-                if realcontenttype != content_type:
+                if realcontenttype != content_type: 
                     self._log.warning('Server specified {}, but returned a {} image. Correcting the extension to {}', content_type, realcontenttype, extension)
 
                 with NamedTemporaryFile(suffix=extension, delete=False) as file:
                     file.write(header)  #write the first already loaded part of the image
                     for chunk in data:  #download the remaining part of the image
                         file.write(chunk)
-                self._log.debug('downloaded art to: {0}', util.displayable_path(file.name))
-                candidate.path = util.bytestring_path(file.name)
+                self._log.debug('downloaded art to: {0}', util.displayable_path(file.name)) #logging the download operation
+                candidate.path = util.bytestring_path(file.name) #path of the candidate image is assigned using the bytestring_path function
                 return
 
-        except (IOError, requests.RequestException, TypeError) as exc:
-            self._log.debug('error fetching art: {}', exc)
+        except (IOError, requests.RequestException, TypeError) as exception: #if there is an error with downloading the image this code block will run
+            self._log.debug('error downloading image: {}', exception)
             return
 
 
-class CoverArtArchive(ArtSource):
-    NAME = "Cover Art Archive"
-    MATCHING_CRITERIA = ['release']
+class CoverArtArchive(ArtSource): #this is the main website used in the project to get images 
+    NAME = "Cover Art Archive" #name of the website
+    MATCHING_CRITERIA = ['release'] 
 
     if util.SNI_SUPPORTED: #server name indication
-        URL = 'https://coverartarchive.org/release/{mbid}/front'
+        URL = 'https://coverartarchive.org/release/{mbid}/front' #mbid = MusicBrainz ID
     else:
         URL = 'http://coverartarchive.org/release/{mbid}/front'
 
-    def get(self, album, plugin, paths):
-        #Return the Cover Art Archive URLs using album MusicBrainz release ID.
-    
-        if 'release' in self.match_by and album.mb_albumid:
+    def get(self, album, plugin, paths): ###############bu bir generator!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        if 'release' in self.match_by and album.mb_albumid: #Return the Cover Art Archive URLs using album MusicBrainz release ID.
             yield self._candidate(url=self.URL.format(mbid=album.mb_albumid), match=Candidate.MATCH_EXACT)
 
-# Try each source in turn.
+SOURCE = ['coverart'] 
 
-SOURCES_ALL = ['coverart']
-
-ART_SOURCES = {
+ART_SOURCE = {
     'coverart': CoverArtArchive,  
 }
-SOURCE_NAMES = {a: b for b, a in ART_SOURCES.items()}
+SOURCE_NAME = {a: b for b, a in ART_SOURCE.items()}
 
 IMAGE_TYPES = { #the retrieved images should be in these formats
     'image/jpeg': [b'jpg', b'jpeg'], #b indicates byte literals
@@ -187,19 +183,19 @@ IMAGE_TYPES = { #the retrieved images should be in these formats
 IMAGE_EXTENSIONS = [img for imgs in IMAGE_TYPES.values() for img in imgs]
 
 
-# PLUGIN LOGIC ###############################################################
+# PLUGIN ###############################################################
 
 
-class graduatorPlug(BeetsPlugin, RequestLogger):
+class graduatorPlug(BeetsPlugin, RequestLogger): #derived from BeetsPlugin and RequestLogger
     
-    def __init__(self):
+    def __init__(self): #constructor
         super(graduatorPlug, self).__init__()
 
-        self.art_candidates = {}  # Holds candidates corresponding to downloaded images between fetching them and placing them in the filesystem.
+        self.art_candidates = {}  #Holds candidates corresponding to downloaded images between fetching them and placing them in the filesystem.
 
-        self.maxwidth = self.config['maxwidth'].get(int)
+        self.maxwidth = self.config['maxwidth'].get(int) 
 
-        cover_names = self.config['cover_names'].as_str_seq()
+        cover_names = self.config['cover_names'].as_str_seq() 
         self.cover_names = list(map(util.bytestring_path, cover_names))
         self.cautious = self.config['cautious'].get(bool)
         self.store_source = self.config['store_source'].get(bool)
@@ -211,11 +207,11 @@ class graduatorPlug(BeetsPlugin, RequestLogger):
             self.import_stages = [self.graduatorPlug]
             self.register_listener('import_task_files', self.assign_art)
 
-        available_sources = list(SOURCES_ALL)
+        available_sources = list(SOURCE)
         
         available_sources = [(s, c)
                              for s in available_sources
-                             for c in ART_SOURCES[s].MATCHING_CRITERIA]
+                             for c in ART_SOURCE[s].MATCHING_CRITERIA]
         sources = plugins.sanitize_pairs(self.config['sources'].as_pairs(default_value='*'), available_sources)
 
         if ('remote_priority' in self.config):
@@ -229,20 +225,17 @@ class graduatorPlug(BeetsPlugin, RequestLogger):
                         others.append((s, c))
                 sources = others + fs
 
-        self.sources = [ART_SOURCES[s](self._log, self.config, match_by=[c])
+        self.sources = [ART_SOURCE[s](self._log, self.config, match_by=[c])
                         for s, c in sources]
 
-    # Asynchronous; after music is added to the library.
     def graduatorPlug(self, session, task):
-        """Find art for the album being imported."""
-        if task.is_album:  # Only fetch art for full albums.
-            if task.album.artpath and os.path.isfile(task.album.artpath):
-                # Album already has art (probably a re-import); skip it.
+        if (task.is_album): 
+            if (task.album.artpath and os.path.isfile(task.album.artpath)): #Album already has art (probably a re-import); skip it.
                 return
 
             candidate = self.art_for_album(task.album, task.paths)
 
-            if candidate:
+            if (candidate):
                 self.art_candidates[task] = candidate
 
     def _set_art(self, album, candidate, delete=False):
@@ -250,7 +243,7 @@ class graduatorPlug(BeetsPlugin, RequestLogger):
         if self.store_source:
             # store the source of the chosen artwork in a flexible field
             self._log.debug("Storing art_source for {0.albumartist} - {0.album}", album)
-            album.art_source = SOURCE_NAMES[type(candidate.source)]
+            album.art_source = SOURCE_NAME[type(candidate.source)]
         album.store()
 
     # Synchronous; after music files are put in place.
@@ -265,16 +258,17 @@ class graduatorPlug(BeetsPlugin, RequestLogger):
                 task.prune(candidate.path)
 
 
-    def commands(self):
-        cmd = ui.Subcommand('graduatorPlug', help='help Dilan to graduate from ITU CE')
+    def commands(self): #this function adds graduatorPlug to beets command list
+        cmd = ui.Subcommand('graduatorPlug', help='help Dilan to graduate from ITU CE') # :)
         cmd.parser.add_option(
             '-f', '--force', dest='force',
             action='store_true', default=False,
             help=u're-download art when already present'
         )
 
-        def func(lib, opts, args):
+        def func(lib, opts, args): #main functionalities of the plugin
             self.finalize(lib, lib.albums(ui.decargs(args)), opts.force)
+            #self.getLyrics()
 
         cmd.func = func
         return [cmd]
@@ -283,42 +277,41 @@ class graduatorPlug(BeetsPlugin, RequestLogger):
 
     def art_for_album(self, album, paths):
         #Given an Album object, returns a path to downloaded art for the album (or None if no art is found).  
-        out = None
+        result = None
 
         for source in self.sources:
             
-                self._log.debug(
-                    'trying source {0} for album {1.albumartist} - {1.album}',
-                    SOURCE_NAMES[type(source)],
-                    album,
-                )
+                self._log.debug('trying source {0} for album {1.albumartist} - {1.album}', SOURCE_NAME[type(source)], album)
                 # URLs might be invalid at this point, or the image may not fulfill the requirements
                 for candidate in source.get(album, self, paths):
                     source.get_image(candidate, self)
                     if candidate.validate(self):
-                        out = candidate
+                        result = candidate
                         self._log.debug(
-                            u'using {0.LOCAL_STR} image {1}'.format(source, util.displayable_path(out.path)))
+                            u'using {0.LOCAL_STR} image {1}'.format(source, util.displayable_path(result.path)))
                         break
-                if out:
+                if result:
                     break
 
-        return out
+        return result
 
-    def finalize(self, lib, albums, force):
-        #Fetch album art for each of the albums. This implements the graduatorPlug CLI command.
+    def finalize(self, lib, albums, force): #Get album cover for each of the albums. This implements the graduatorPlug CLI command.
         
         for album in albums:
             if (album.artpath and not force and os.path.isfile(album.artpath)):
                     message = ui.colorize('text_highlight_minor', 'has album art')
                     self._log.info('{0}: {1}', album, message)  #prints out to command line 
             else:
-                local_paths = None if force else [album.path]
+                localpath = None if force else [album.path]
 
-                candidate = self.art_for_album(album, local_paths)
-                if candidate: #if the album art is found
+                candidate = self.art_for_album(album, localpath)
+                if (candidate): #if the album art is found
                     self._set_art(album, candidate)
                     message = ui.colorize('text_success', 'found album art') #print in green
                 else:
                     message = ui.colorize('text_error', 'no art found') #print in red
                 self._log.info('{0}: {1}', album, message) #prints out to command line
+
+
+
+
