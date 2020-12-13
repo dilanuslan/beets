@@ -16,7 +16,7 @@ from tempfile import NamedTemporaryFile #the file is guaranteed to have a visibl
 from mediafile import image_mime_type #this library belongs to beets and it is installed by pip, used for declaring the MIME type
 from beets.util.artresizer import ArtResizer #artresizer also belongs to beets and it is used as a helper for this project
 
-from beets.util import bytestring_path #these are used for setting the paths  
+from beets.util import bytestring_path #this is used for setting the paths  
 
 from bs4 import BeautifulSoup #BeautifulSoup will be used for fetching lyrics
 
@@ -89,7 +89,10 @@ def getLog(log, *args, **kwargs): #defining the requests
 class RequestLogger(object): #Adds a Requests wrapper to the class that uses the logger
 
     def request(self, *args, **kwargs):
-        return getLog(self._log, *args, **kwargs) 
+        return getLog(self._log, *args, **kwargs)
+
+
+##### COVER ART SOURCES 
 
 #this is an initial class for further definitions and logging
 class CoverArtSource(RequestLogger):
@@ -183,7 +186,7 @@ IMAGE_TYPES = { #the retrieved images should be in these formats
 IMAGE_EXTENSIONS = [img for imgs in IMAGE_TYPES.values() for img in imgs]
 
 
-# PLUGIN ###############################################################
+                                                                        # PLUGIN #
 
 
 class graduatorPlug(BeetsPlugin, RequestLogger): #derived from BeetsPlugin and RequestLogger
@@ -193,47 +196,31 @@ class graduatorPlug(BeetsPlugin, RequestLogger): #derived from BeetsPlugin and R
 
         self.art_candidates = {}  #Holds candidates corresponding to downloaded images between fetching them and placing them in the filesystem.
 
-        self.maxwidth = self.config['maxwidth'].get(int) 
+        self.maxwidth = self.config['maxwidth'].get(int) #it can be up to 2000 as defined in config.yaml
 
-        cover_names = self.config['cover_names'].as_str_seq() 
-        self.cover_names = list(map(util.bytestring_path, cover_names))
-        self.cautious = self.config['cautious'].get(bool)
-        self.store_source = self.config['store_source'].get(bool)
+        cover_names = self.config['cover_names'].as_str_seq() #one of these elements in this list: ['cover', 'front', 'art', 'album', 'folder']
+        self.cover_names = list(map(util.bytestring_path, cover_names)) #bytestring_path: Given a path, which is either a bytes or a unicode, returns a str path (ensuring that we never deal with Unicode pathnames).
+        self.cautious = self.config['cautious'].get(bool) #gets False from the config file
+        self.store_source = self.config['store_source'].get(bool) #gets False from the config file
 
-        self.src_removed = (config['import']['delete'].get(bool) or config['import']['move'].get(bool))
+        self.src_removed = (config['import']['move'].get(bool)) #gets yes from the config file
 
-        if (self.config['auto']):
-            # Enable two import hooks when fetching is enabled.
+        if (self.config['auto']): #Enable two import hooks when fetching is enabled.
             self.import_stages = [self.graduatorPlug]
-            self.register_listener('import_task_files', self.assign_art)
 
-        available_sources = list(SOURCE)
+        available_source = list(SOURCE)
         
-        available_sources = [(s, c)
-                             for s in available_sources
-                             for c in ART_SOURCE[s].MATCHING_CRITERIA]
-        sources = plugins.sanitize_pairs(self.config['sources'].as_pairs(default_value='*'), available_sources)
+        available_source = [(s, c) for s in available_source for c in ART_SOURCE[s].MATCHING_CRITERIA]
+        source = plugins.sanitize_pairs(self.config['source'].as_pairs(default_value='*'), available_source)
 
-        if ('remote_priority' in self.config):
-            if self.config['remote_priority'].get(bool):
-                fs = []
-                others = []
-                for s, c in sources:
-                    if s == None:
-                        fs.append((s, c))
-                    else:
-                        others.append((s, c))
-                sources = others + fs
-
-        self.sources = [ART_SOURCE[s](self._log, self.config, match_by=[c])
-                        for s, c in sources]
+        self.source = [ART_SOURCE[s](self._log, self.config, match_by=[c]) for s, c in source]
 
     def graduatorPlug(self, session, task):
         if (task.is_album): 
             if (task.album.artpath and os.path.isfile(task.album.artpath)): #Album already has art (probably a re-import); skip it.
                 return
 
-            candidate = self.art_for_album(task.album, task.paths)
+            candidate = self.albumcover(task.album, task.paths)
 
             if (candidate):
                 self.art_candidates[task] = candidate
@@ -246,21 +233,9 @@ class graduatorPlug(BeetsPlugin, RequestLogger): #derived from BeetsPlugin and R
             album.art_source = SOURCE_NAME[type(candidate.source)]
         album.store()
 
-    # Synchronous; after music files are put in place.
-    def assign_art(self, session, task):
-        #Place the discovered art in the filesystem.
-        if task in self.art_candidates:
-            candidate = self.art_candidates.pop(task)
-
-            self._set_art(task.album, candidate, not self.src_removed)
-
-            if self.src_removed:
-                task.prune(candidate.path)
-
-
     def commands(self): #this function adds graduatorPlug to beets command list
-        cmd = ui.Subcommand('graduatorPlug', help='help Dilan to graduate from ITU CE') # :)
-        cmd.parser.add_option(
+        command = ui.Subcommand('graduatorPlug', help='help Dilan to graduate from ITU CE') # :)
+        command.parser.add_option(
             '-f', '--force', dest='force',
             action='store_true', default=False,
             help=u're-download art when already present'
@@ -270,16 +245,13 @@ class graduatorPlug(BeetsPlugin, RequestLogger): #derived from BeetsPlugin and R
             self.finalize(lib, lib.albums(ui.decargs(args)), opts.force)
             #self.getLyrics()
 
-        cmd.func = func
-        return [cmd]
+        command.func = func
+        return [command]
 
-    # Utilities converted from functions to methods on logging overhaul
-
-    def art_for_album(self, album, paths):
-        #Given an Album object, returns a path to downloaded art for the album (or None if no art is found).  
+    def albumcover(self, album, paths):  #Given an Album object, returns a path to downloaded art for the album (or None if no art is found).  
         result = None
 
-        for source in self.sources:
+        for source in self.source:
             
                 self._log.debug('trying source {0} for album {1.albumartist} - {1.album}', SOURCE_NAME[type(source)], album)
                 # URLs might be invalid at this point, or the image may not fulfill the requirements
@@ -304,14 +276,12 @@ class graduatorPlug(BeetsPlugin, RequestLogger): #derived from BeetsPlugin and R
             else:
                 localpath = None if force else [album.path]
 
-                candidate = self.art_for_album(album, localpath)
+                candidate = self.albumcover(album, localpath)
                 if (candidate): #if the album art is found
                     self._set_art(album, candidate)
                     message = ui.colorize('text_success', 'found album art') #print in green
                 else:
                     message = ui.colorize('text_error', 'no art found') #print in red
                 self._log.info('{0}: {1}', album, message) #prints out to command line
-
-
 
 
