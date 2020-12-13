@@ -16,7 +16,7 @@ graduatorPlug:
     quality: 0
     cautious: False
     cover_names: ['cover', 'front', 'art', 'album', 'folder']
-    sources: ['coverart']
+    source: ['coverart']
     store_source: False
     high_resolution: False
 
