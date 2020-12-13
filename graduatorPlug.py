@@ -168,7 +168,7 @@ class CoverArtArchive(ArtSource): #this is the main website used in the project 
     else:
         URL = 'http://coverartarchive.org/release/{mbid}/front'
 
-    def get(self, album, plugin, paths): ###############bu bir generator!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    def get(self, album, plugin, paths): 
         if 'release' in self.match_by and album.mb_albumid: #Return the Cover Art Archive URLs using album MusicBrainz release ID.
             yield self._candidate(url=self.URL.format(mbid=album.mb_albumid), match=Candidate.MATCH_EXACT)
 
