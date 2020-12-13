@@ -227,7 +227,7 @@ class graduatorPlug(BeetsPlugin, RequestLogger): #derived from BeetsPlugin and R
 
     def _set_art(self, album, candidate, delete=False):
         album.set_art(candidate.path, delete)
-        if self.store_source:
+        if (self.store_source):
             # store the source of the chosen artwork in a flexible field
             self._log.debug("Storing art_source for {0.albumartist} - {0.album}", album)
             album.art_source = SOURCE_NAME[type(candidate.source)]
@@ -238,7 +238,7 @@ class graduatorPlug(BeetsPlugin, RequestLogger): #derived from BeetsPlugin and R
         command.parser.add_option(
             '-f', '--force', dest='force',
             action='store_true', default=False,
-            help=u're-download art when already present'
+            help=u're-download art and lyrics when already exist'
         )
 
         def func(lib, opts, args): #main functionalities of the plugin
@@ -257,12 +257,12 @@ class graduatorPlug(BeetsPlugin, RequestLogger): #derived from BeetsPlugin and R
                 # URLs might be invalid at this point, or the image may not fulfill the requirements
                 for candidate in source.get(album, self, paths):
                     source.get_image(candidate, self)
-                    if candidate.validate(self):
+                    if (candidate.validate(self)):
                         result = candidate
                         self._log.debug(
                             u'using {0.LOCAL_STR} image {1}'.format(source, util.displayable_path(result.path)))
                         break
-                if result:
+                if (result):
                     break
 
         return result
@@ -274,7 +274,10 @@ class graduatorPlug(BeetsPlugin, RequestLogger): #derived from BeetsPlugin and R
                     message = ui.colorize('text_highlight_minor', 'has album art')
                     self._log.info('{0}: {1}', album, message)  #prints out to command line 
             else:
-                localpath = None if force else [album.path]
+                if(force):
+                    localpath = None
+                else:
+                    localpath = [album.path]
 
                 candidate = self.albumcover(album, localpath)
                 if (candidate): #if the album art is found
