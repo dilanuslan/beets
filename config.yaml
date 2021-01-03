@@ -1,5 +1,5 @@
 directory: ~/Desktop/NewMusic
-library: ~/Desktop/NewMusicDB/newlibrary.blb
+library: ~/Desktop/NewMusicDB/newlibrary.db
 
 import: 
     copy: yes
@@ -11,14 +11,22 @@ pluginpath: ~/Desktop/PLUGIN/beetsplug
 
 graduatorPlug:
     auto: True
+    force: False
     minwidth: 0
     maxwidth: 2000
     quality: 0
     cautious: False
-    cover_names: ['cover', 'front', 'art', 'album', 'folder']
+    cover_names: ['cover']
     source: ['coverart']
+    lyric: ['genius']
+    default_lyrics: None
+    force: False
+    local: False
     store_source: False
     high_resolution: False
+    genius_api_key: ix67dChoM3LyJQKeqhnG2_Z6hRUl_KuAoIJH4RxVvbfmC2r9NSlriHCjDbz7PAu8
+   
+                     
 
 replace:
     '[\\/]': _
