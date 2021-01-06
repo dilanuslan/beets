@@ -239,7 +239,12 @@ class Genius(Lyric): #deriving genius class from lyric class
     def fetch(self, artist, title): 
 
         #https://docs.python.org/3/library/json.html this document was really helpful for understanding json library in Python
+
        
+        title = re.sub(r"[\(\[].*?[\)\]]", "", title)
+        duet = artist.find("feat.")
+        artist = artist[0:duet]
+        
         json = self.search(artist, title) #Genius does not directly allow to scrape the api, first we try to get a matching url with artist name and title of the song
         #print(json) #used for debugging
         if not json: #if search function returns None
@@ -290,8 +295,8 @@ class Genius(Lyric): #deriving genius class from lyric class
 
             #changing br elements with end of line character
             lyrics_div = div2.parent 
-            for br in lyrics_div.find_all("br"):
-                br.replace_with("\n")
+            for breaks in lyrics_div.find_all("br"):
+                breaks.replace_with("\n")
 
             #finding ads and replacing them with end of line character
             ads = lyrics_div.find_all("div", class_=re.compile("InreadAd__Container"))
@@ -314,9 +319,9 @@ def clarify(html, plain_text_out=False): #cleans the content of fetched html
 
 
 def unescape(text):
-    if isinstance(text, bytes):
-        text = text.decode('utf-8', 'ignore')
-    out = text.replace(u'&nbsp;', u' ')
+    if isinstance(text, bytes): #check if text contains bytes
+        text = text.decode('utf-8', 'ignore') #decoding the text
+    out = text.replace('&nbsp;', ' ') #replacing &nbsp with space character
     return out
 
 
@@ -325,8 +330,8 @@ def unescape(text):
 
 class graduatorPlug(BeetsPlugin, RequestLogger): #derived from BeetsPlugin and RequestLogger
 
-    LYRIC = ['genius']
-    SOURCE_BACKENDS = {
+    LYRIC = ['genius'] #name of our source
+    SOURCE_LYRICS = { #defining which class to call 
         'genius': Genius
     }
     
@@ -344,20 +349,20 @@ class graduatorPlug(BeetsPlugin, RequestLogger): #derived from BeetsPlugin and R
 
         self.src_removed = (config['import']['move'].get(bool)) #gets yes from the config file
 
-        if (self.config['auto']): 
+        if (self.config['auto']): #importing our plugin
             self.import_stages = [self.graduatorPlug]
 
-        available_source = list(SOURCE)
+        available_source = list(SOURCE) #putting our source into a list
         
-        available_source = [(s, c) for s in available_source for c in ART_SOURCE[s].MATCHING_CRITERIA]
-        source = plugins.sanitize_pairs(self.config['source'].as_pairs(default_value='*'), available_source)
+        available_source = [(s, c) for s in available_source for c in ART_SOURCE[s].MATCHING_CRITERIA] #creating a list as [(CoverArtArchive, release)]
+        source = plugins.sanitize_pairs(self.config['source'].as_pairs(default_value='*'), available_source) 
  
         self.source = [ART_SOURCE[s](self._log, self.config, match_by=[c]) for s, c in source]
 
 
         available_sources = list(self.LYRIC)
         sources = plugins.sanitize_choices(self.config['lyric'].as_str_seq(), available_sources)
-        self.backends = [self.SOURCE_BACKENDS[i](self.config, self._log) for i in sources]
+        self.backends = [self.SOURCE_LYRICS[i](self.config, self._log) for i in sources]
 
         self.config['genius_api_key'].redact = True
 
@@ -387,10 +392,10 @@ class graduatorPlug(BeetsPlugin, RequestLogger): #derived from BeetsPlugin and R
             action='store_true', default=False,
             help='re-download art and lyrics when they already exist'
         )
-        command.parser.add_option(
+        command.parser.add_option( #printing lyrics of each song to command line
             '-p', '--print', dest='printlyrics',
             action='store_true', default=False,
-            help='print lyrics to console',
+            help='print lyrics to command line',
         )
 
         def func(lib, opts, args): #main functionalities of the plugin
