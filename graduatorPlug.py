@@ -1,6 +1,6 @@
 from __future__ import division  #it will change the / operator to mean true division throughout the module
 from beets import plugins #enables to use the plugins that already exists
-from beets import ui #subcommand is defined under this library
+from beets import ui #command operations are defined under this library
 from beets import util #utilization library
 from beets import config #to be able to edit the configuration file of the application
 from beets.plugins import BeetsPlugin #importing beets plugin packet to be able to write a new plugin
@@ -8,7 +8,7 @@ from beets.plugins import BeetsPlugin #importing beets plugin packet to be able 
 import os #operating system support
 import re #regular expressions 
 
-import requests #this library allows to make requests like get, post, etc.
+import requests #this library allows to make requests like get, post, etc. 
 
 from contextlib import closing #returns a context manager that closes a page upon completion of the block
 from tempfile import NamedTemporaryFile #the file is guaranteed to have a visible name in the file system
@@ -16,9 +16,15 @@ from tempfile import NamedTemporaryFile #the file is guaranteed to have a visibl
 from mediafile import image_mime_type #this library belongs to beets and it is installed by pip, used for declaring the MIME type
 from beets.util.artresizer import ArtResizer #artresizer also belongs to beets and it is used as a helper for this project
 
-from beets.util import bytestring_path #this is used for setting the paths  
+from beets.util import bytestring_path #this is used for setting the file paths  
 
 from bs4 import BeautifulSoup #BeautifulSoup will be used for fetching lyrics
+
+import warnings #for warning control
+import html #This module defines functions to manipulate HTML.
+import json #JavaScript Object Notation 
+from unidecode import unidecode #takes Unicode data and tries to represent it in ASCII characters
+
 
 class Candidate(object):
     
@@ -85,6 +91,7 @@ def getLog(log, *args, **kwargs): #defining the requests
         send_kwargs.update(settings)
         log.debug('{}: {}', message, prepared.url)
         return s.send(prepared, **send_kwargs)
+
 
 class RequestLogger(object): #Adds a Requests wrapper to the class that uses the logger
 
@@ -172,10 +179,12 @@ class CoverArtArchive(ArtSource): #this is the main website used in the project 
         if 'release' in self.match_by and album.mb_albumid: #Return the Cover Art Archive URLs using album MusicBrainz release ID.
             yield self._candidate(url=self.URL.format(mbid=album.mb_albumid), match=Candidate.MATCH_EXACT)
 
-SOURCE = ['coverart'] 
+
+
+SOURCE = ['coverart'] #album covers are taken from coverartarchive.org
 
 ART_SOURCE = {
-    'coverart': CoverArtArchive,  
+    'coverart': CoverArtArchive  
 }
 SOURCE_NAME = {a: b for b, a in ART_SOURCE.items()}
 
@@ -186,10 +195,140 @@ IMAGE_TYPES = { #the retrieved images should be in these formats
 IMAGE_EXTENSIONS = [img for imgs in IMAGE_TYPES.values() for img in imgs]
 
 
+class Lyric(object): #general class for lyrics
+    def __init__(self, config, log):
+        self._log = log
+
+    def get_url(self, url): #Retrieve the content at a given URL, or return None if the source is unreachable.
+        try:
+            # Disable the InsecureRequestWarning that comes from using
+            # `verify=false`.
+            # https://github.com/kennethreitz/requests/issues/2214
+            # We're not overly worried about the NSA MITMing our lyrics scraper
+            with warnings.catch_warnings():
+                warnings.simplefilter('ignore')
+                r = requests.get(url, verify=False, headers={'User-Agent': 'USER_AGENT',})
+        except requests.RequestException as exc:
+            self._log.debug(u'lyrics request failed: {0}', exc)
+            return
+        if r.status_code == requests.codes.ok:
+            return r.text
+        else:
+            self._log.debug('failed to fetch: {0} ({1})', url, r.status_code)
+
+    def fetch(self, artist, title):
+        raise NotImplementedError()
+
+def slugify(text):
+    #The unicode module exports a function that takes a string and returns a string that can be encoded to ASCII bytes in Python 3
+    return re.sub(r'\W+', '-', unidecode(text).lower().strip()).strip('-') #we lower unicoded text and remove spaces at the beginning and end of the string, sub replaces \W+ characters in this text with -. Then we remove -'s.
+
+
+class Genius(Lyric): #deriving genius class from lyric class
+
+    base_url = "https://api.genius.com" #our base url is the api for genius
+
+    def __init__(self, config, log):
+        super(Genius, self).__init__(config, log)
+        self.api_key = config['genius_api_key'].as_str() #get the api key from config file
+        self.headers = { #this header implementation was taken from genius directly
+            'Authorization': "Bearer %s" % self.api_key,
+            'User-Agent': "USER_AGENT",
+        }
+
+    def fetch(self, artist, title): 
+
+        #https://docs.python.org/3/library/json.html this document was really helpful for understanding json library in Python
+       
+        json = self.search(artist, title) #Genius does not directly allow to scrape the api, first we try to get a matching url with artist name and title of the song
+        #print(json) #used for debugging
+        if not json: #if search function returns None
+            self._log.debug('Invalid JSON')
+            return None
+
+        for hit in json["response"]["hits"]: #assigning the artist name 
+            hit_artist = hit["result"]["primary_artist"]["name"]
+
+            if (slugify(hit_artist) == slugify(artist)): #if slugified artist names are equal we scrape lyrics
+                return self.scrapelyrics(self.get_url(hit["result"]["url"])) 
+
+        self._log.debug('We could not find a matching artist \'{0}\'', artist)
+
+    def search(self, artist, title):
+
+        search_url = self.base_url + "/search" #obtained: https://api.genius.com/search
+        data = {'q': title + " " + artist.lower()} #data is our query statement
+        try:
+            response = requests.get(search_url, data=data, headers=self.headers) #we try to get a response from this query (with artist name, title and specified headers)
+        except requests.RequestException as exception: #if we can not get a response
+            self._log.debug('Genius API request failed: {0}', exception)
+            return None
+
+        try: #try if we can return a valid json format
+            return response.json() 
+        except ValueError: #raise a value error if the response is not appropriate
+            return None
+
+    def scrapelyrics(self, html):
+
+        soup = BeautifulSoup(html, "html.parser") #https://www.crummy.com/software/BeautifulSoup/bs4/doc/ soup holds the content of the desired page.
+
+        [h.extract() for h in soup('script')] #Removing script tags from the html
+
+        lyrics_div = soup.find("div", class_="lyrics") #find the div with the lyrics class
+        if not lyrics_div: #if can not be found
+            self._log.debug('Unusual song page') 
+            div2 = soup.find("div", class_=re.compile("Lyrics__Container")) #Compile a regular expression pattern into a regular expression object
+            if not div2: #if can not be found
+                if soup.find("div", class_=re.compile("LyricsPlaceholder__Message"), string="This song is an instrumental"): #if a placeholder statement is found
+                    self._log.debug('Detected instrumental') #instrumental song 
+                    return "[Instrumental]" #this would be stored as the lyrics 
+                else:
+                    self._log.debug("Couldn't scrape the page..") #otherwise we can not scrape the page
+                    return None
+
+
+            #changing br elements with end of line character
+            lyrics_div = div2.parent 
+            for br in lyrics_div.find_all("br"):
+                br.replace_with("\n")
+
+            #finding ads and replacing them with end of line character
+            ads = lyrics_div.find_all("div", class_=re.compile("InreadAd__Container"))
+
+            for ad in ads:
+                ad.replace_with("\n")
+
+        return lyrics_div.get_text() #return the text we scraped from the webpage
+
+def clarify(html, plain_text_out=False): #cleans the content of fetched html
+   
+    html = unescape(html) #call unescape function
+
+    html = html.replace('\r', '\n')  #Normalize end of lines.
+    html = re.sub(r' +', ' ', html)  #r is used for creating a raw string. Return the string obtained by replacing the leftmost non-overlapping occurrences of pattern in string by the replacement. Here whitespaces collapse.
+    html = re.sub(r'(?s)<(script).*?</\1>', '', html)  #Stripping script tags.
+    html = re.sub(u'\u2005', " ", html)  #replacing unicode with regular space
+
+    return html
+
+
+def unescape(text):
+    if isinstance(text, bytes):
+        text = text.decode('utf-8', 'ignore')
+    out = text.replace(u'&nbsp;', u' ')
+    return out
+
+
                                                                         # PLUGIN #
 
 
 class graduatorPlug(BeetsPlugin, RequestLogger): #derived from BeetsPlugin and RequestLogger
+
+    LYRIC = ['genius']
+    SOURCE_BACKENDS = {
+        'genius': Genius
+    }
     
     def __init__(self): #constructor
         super(graduatorPlug, self).__init__()
@@ -205,16 +344,24 @@ class graduatorPlug(BeetsPlugin, RequestLogger): #derived from BeetsPlugin and R
 
         self.src_removed = (config['import']['move'].get(bool)) #gets yes from the config file
 
-        if (self.config['auto']): #Enable two import hooks when fetching is enabled.
+        if (self.config['auto']): 
             self.import_stages = [self.graduatorPlug]
 
         available_source = list(SOURCE)
         
         available_source = [(s, c) for s in available_source for c in ART_SOURCE[s].MATCHING_CRITERIA]
         source = plugins.sanitize_pairs(self.config['source'].as_pairs(default_value='*'), available_source)
-
+ 
         self.source = [ART_SOURCE[s](self._log, self.config, match_by=[c]) for s, c in source]
 
+
+        available_sources = list(self.LYRIC)
+        sources = plugins.sanitize_choices(self.config['lyric'].as_str_seq(), available_sources)
+        self.backends = [self.SOURCE_BACKENDS[i](self.config, self._log) for i in sources]
+
+        self.config['genius_api_key'].redact = True
+
+       
     def graduatorPlug(self, session, task):
         if (task.is_album): 
             if (task.album.artpath and os.path.isfile(task.album.artpath)): #Album already has art (probably a re-import); skip it.
@@ -235,18 +382,31 @@ class graduatorPlug(BeetsPlugin, RequestLogger): #derived from BeetsPlugin and R
 
     def commands(self): #this function adds graduatorPlug to beets command list
         command = ui.Subcommand('graduatorPlug', help='help Dilan to graduate from ITU CE') # :)
-        command.parser.add_option(
-            '-f', '--force', dest='force',
+        command.parser.add_option( #adding printing and forcing options to our plugin
+            '-f', '--force', dest='force',  
             action='store_true', default=False,
-            help=u're-download art and lyrics when already exist'
+            help='re-download art and lyrics when they already exist'
+        )
+        command.parser.add_option(
+            '-p', '--print', dest='printlyrics',
+            action='store_true', default=False,
+            help='print lyrics to console',
         )
 
         def func(lib, opts, args): #main functionalities of the plugin
-            self.finalize(lib, lib.albums(ui.decargs(args)), opts.force)
-            #self.getLyrics()
+            self.finalize(lib, lib.albums(ui.decargs(args)), opts.force) 
+        
+            items = lib.items(ui.decargs(args)) #from database we reach out to items table
+            for item in items: #for each item in items table
+                self.getlyrics(lib, item, self.config['force']) #call getlyrics function with force = False
+                if item.lyrics: #if the lyrics are found
+                    if opts.printlyrics: #if there is a -p or --print option
+                        ui.print_(item.lyrics) #print lyrics to console
+                        ui.print_("\n") #print a space character after each song
+            
 
-        command.func = func
-        return [command]
+        command.func = func #assign our functionalities
+        return [command] #our command is working now
 
     def albumcover(self, album, paths):  #Given an Album object, returns a path to downloaded art for the album (or None if no art is found).  
         result = None
@@ -259,8 +419,7 @@ class graduatorPlug(BeetsPlugin, RequestLogger): #derived from BeetsPlugin and R
                     source.get_image(candidate, self)
                     if (candidate.validate(self)):
                         result = candidate
-                        self._log.debug(
-                            u'using {0.LOCAL_STR} image {1}'.format(source, util.displayable_path(result.path)))
+                        self._log.debug(u'using {0.LOCAL_STR} image {1}'.format(source, util.displayable_path(result.path)))
                         break
                 if (result):
                     break
@@ -287,4 +446,23 @@ class graduatorPlug(BeetsPlugin, RequestLogger): #derived from BeetsPlugin and R
                     message = ui.colorize('text_error', 'no art found') #print in red
                 self._log.info('{0}: {1}', album, message) #prints out to command line
 
+   
 
+    def getlyrics(self, lib, item, force): #get lyrics from web and store them in the database
+
+        if not force and item.lyrics: #if not forced and lyrics already exists
+            self._log.info('lyrics already present: {0}', item)
+            return
+        
+        lyrics = self.backends[0].fetch(item.artist, item.title) #call fetch function defined in Genius class
+
+        if lyrics: #if we find the lyrics
+            self._log.info('fetched lyrics: {0}', item) #print to console the artist, title, and album title
+            lyrics = clarify(lyrics, True) #this function clarifies the HTML content 
+        else: #if lyrics not found
+            self._log.info('lyrics not found: {0}', item)
+            default_lyrics = self.config['default_lyrics'].get() #default_lyrics value is defined as None
+            lyrics = default_lyrics
+           
+        item.lyrics = lyrics #assign lyrics to item's lyrics
+        item.store() #store item in the database
