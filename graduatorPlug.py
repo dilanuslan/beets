@@ -243,7 +243,8 @@ class Genius(Lyric): #deriving genius class from lyric class
        
         title = re.sub(r"[\(\[].*?[\)\]]", "", title)
         duet = artist.find("feat.")
-        artist = artist[0:duet]
+        if(duet != -1):
+            artist = artist[0:duet]
         
         json = self.search(artist, title) #Genius does not directly allow to scrape the api, first we try to get a matching url with artist name and title of the song
         #print(json) #used for debugging
@@ -397,6 +398,11 @@ class graduatorPlug(BeetsPlugin, RequestLogger): #derived from BeetsPlugin and R
             action='store_true', default=False,
             help='print lyrics to command line',
         )
+        command.parser.add_option(
+            '-w', '--write', dest='writetofile',
+            action='store_true', default=False,
+            help='write lyrics to a text file',
+        )
 
         def func(lib, opts, args): #main functionalities of the plugin
             self.finalize(lib, lib.albums(ui.decargs(args)), opts.force) 
@@ -408,6 +414,9 @@ class graduatorPlug(BeetsPlugin, RequestLogger): #derived from BeetsPlugin and R
                     if opts.printlyrics: #if there is a -p or --print option
                         ui.print_(item.lyrics) #print lyrics to console
                         ui.print_("\n") #print a space character after each song
+                    if opts.writetofile:
+                        self.writetofile(lib, item, self.config['force'])
+
             
 
         command.func = func #assign our functionalities
@@ -469,5 +478,30 @@ class graduatorPlug(BeetsPlugin, RequestLogger): #derived from BeetsPlugin and R
             default_lyrics = self.config['default_lyrics'].get() #default_lyrics value is defined as None
             lyrics = default_lyrics
            
-        item.lyrics = lyrics #assign lyrics to item's lyrics
+        item.lyrics = lyrics.strip() #assign lyrics to item's lyrics deleting whitespaces at the beginning and at the end of the text
         item.store() #store item in the database
+
+    def writetofile(self, lib, item, force):
+        save_path = '/Users/dilanuslan/Desktop/NewMusic/'
+
+        save_path = save_path + item.albumartist + '/' + item.album
+
+        filename = item.title + ".txt"  
+
+        completeName = os.path.join(save_path, filename) 
+
+        file1 = open(completeName, "w")
+
+        toFile = item.lyrics
+
+        file1.write(toFile)
+
+        file1.close()
+
+
+
+
+
+
+
+
