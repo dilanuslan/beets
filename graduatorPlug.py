@@ -26,30 +26,29 @@ import json #JavaScript Object Notation
 from unidecode import unidecode #takes Unicode data and tries to represent it in ASCII characters
 
 
-class Candidate(object):
+class Image(object):
     
-    CANDIDATE_BAD = 0 #not usable
-    CANDIDATE_EXACT = 1 #usable
-    MATCH_EXACT = 0 #exact match
+    bad_image = 0 #not usable
+    good_image = 1 #usable
+    exact_match = 0 #exact match
 
-    def __init__(self, log, path=None, url=None, source='', match=None, size=None): #constructor for candidate image
+    def __init__(self, log, path=None, url=None, match=None, size=None): #constructor for candidate image
         self._log = log #for beetlogs.txt
         self.path = path #path of the image
         self.url = url #url of the image
-        self.source = source #source of the image (website)
-        self.check = None #checking whether the image is usable or not
         self.match = match #result of checking 
         self.size = size #size of the image
+        self.check = None #checking whether the image is usable or not
 
     #validations by the path and the size
 
     def _validate(self, plugin):
 
-        if not self.path:
-            return self.CANDIDATE_BAD
+        if (not self.path):
+            return self.bad_image
 
-        if not self.size:
-            return self.CANDIDATE_EXACT
+        if (not self.size):
+            return self.good_image
 
     def validate(self, plugin):
         self.check = self._validate(plugin)
@@ -72,13 +71,9 @@ def getLog(log, *args, **kwargs): #defining the requests
     #timeout = How long to wait for the server to send data before giving up, as a float, or a (connect timeout, read timeout) tuple.
 
     for arg in ('stream', 'verify', 'proxies', 'cert', 'timeout'): #these are some of the parameters of a request
-        if arg in kwargs: #if our request has one of these, we add it to send_kwargs
+        if (arg in kwargs): #if our request has one of these, we add it to send_kwargs
             send_kwargs[arg] = request_kwargs.pop(arg)
 
-    if 'message' in kwargs: #checking whether the special message is in kwargs or not
-        message = kwargs.pop('message')
-    else:
-        message = 'getting URL' #default message 
 
     req = requests.Request('GET', *args, **request_kwargs) #We require data from the web, so 'GET' is our main request method. 
 
@@ -89,42 +84,37 @@ def getLog(log, *args, **kwargs): #defining the requests
         prepared = s.prepare_request(req)
         settings = s.merge_environment_settings(prepared.url, {}, None, None, None) #The function checks the environment and merge it with some settings.
         send_kwargs.update(settings)
-        log.debug('{}: {}', message, prepared.url)
         return s.send(prepared, **send_kwargs)
 
 
-class RequestLogger(object): #Adds a Requests wrapper to the class that uses the logger
+##### COVER ART SOURCE 
+
+#this is an initial class for further definitions and logging
+class CoverArtSource(object):
+
+    def __init__(self, log, config, match_by=None): #constructor
+        self._log = log
+        self._config = config
+        self.match_by = match_by  
+
+    def _candidate(self, **kwargs):
+        return Image(log=self._log, **kwargs) 
 
     def request(self, *args, **kwargs):
         return getLog(self._log, *args, **kwargs)
 
 
-##### COVER ART SOURCES 
-
-#this is an initial class for further definitions and logging
-class CoverArtSource(RequestLogger):
-    MATCHING_CRITERIA = ['default']
-
-    def __init__(self, log, config, match_by=None): #constructor
-        self._log = log
-        self._config = config
-        self.match_by = match_by or self.MATCHING_CRITERIA #assign matching result or default definition
-
-    def _candidate(self, **kwargs):
-        return Candidate(source=self, log=self._log, **kwargs) 
-
-
 #The knowledge from this website is basically used in this part of the code: https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/MIME_types
 
 class ArtSource(CoverArtSource):
-    LOCAL_STR = 'remote'  #remote states that the source is not local 
+    placement = 'remote'  
 
     def get_image(self, candidate, plugin): #Downloads an image from an URL and checks whether it is an image or not. If so, returns a path to the downloaded image. Otherwise, returns None.
       
-        if plugin.maxwidth:
+        if (plugin.maxwidth):
             candidate.url = ArtResizer.shared.proxy_url(plugin.maxwidth, candidate.url) #Modifies an image URL according the method, returning a new URL. For WEBPROXY, a URL on the proxy server is returned. Otherwise, the URL is returned unmodified.
         try:
-            with closing(self.request(candidate.url, stream=True, message=u'downloading image')) as resp:
+            with closing(self.request(candidate.url, stream=True)) as resp:
                 content_type = resp.headers.get('Content-Type', None) #content type should be either jpg or png
 
                 #Download the image to a temporary file. 
@@ -132,7 +122,7 @@ class ArtSource(CoverArtSource):
                 header = b'' #header will be a byte literal
                 for chunk in data:
                     header += chunk
-                    if len(header) >= 32: #we can read up to 32 bytes
+                    if (len(header) >= 32): #we can read up to 32 bytes
                         break
                 else: #server could not return any data
                     return
@@ -141,16 +131,16 @@ class ArtSource(CoverArtSource):
                 #function definition of image_mime_type will be given in the final report
 
                 realcontenttype = image_mime_type(header) # This checks for a jpeg file with only the magic bytes (unrecognized by imghdr.what). imghdr.what returns none for that type of file, so_wider_test_jpeg is run in that case. It still returns None if it didn't match such a jpeg file.
-                if realcontenttype is None: #if image_mime_type return None, content type is assigned to realcontenttype
+                if (realcontenttype is None): #if image_mime_type return None, content type is assigned to realcontenttype
                     realcontenttype = content_type
 
-                if realcontenttype not in IMAGE_TYPES: #if the content type is not jpg or png, it is logged
+                if (realcontenttype not in IMAGE_TYPES): #if the content type is not jpg or png, it is logged
                     self._log.debug('not a supported image: {}', realcontenttype or 'unknown content type')
                     return
 
                 extension = b'.' + IMAGE_TYPES[realcontenttype][0] #extension will be either .jpg or .png
 
-                if realcontenttype != content_type: 
+                if (realcontenttype != content_type): 
                     self._log.warning('Server specified {}, but returned a {} image. Correcting the extension to {}', content_type, realcontenttype, extension)
 
                 with NamedTemporaryFile(suffix=extension, delete=False) as file:
@@ -170,14 +160,14 @@ class CoverArtArchive(ArtSource): #this is the main website used in the project 
     NAME = "Cover Art Archive" #name of the website
     MATCHING_CRITERIA = ['release'] 
 
-    if util.SNI_SUPPORTED: #server name indication
+    if (util.SNI_SUPPORTED): #server name indication
         URL = 'https://coverartarchive.org/release/{mbid}/front' #mbid = MusicBrainz ID
     else:
         URL = 'http://coverartarchive.org/release/{mbid}/front'
 
     def get(self, album, plugin, paths): 
-        if 'release' in self.match_by and album.mb_albumid: #Return the Cover Art Archive URLs using album MusicBrainz release ID.
-            yield self._candidate(url=self.URL.format(mbid=album.mb_albumid), match=Candidate.MATCH_EXACT)
+        if ('release' in self.match_by and album.mb_albumid): #Return the Cover Art Archive URLs using album MusicBrainz release ID.
+            yield self._candidate(url=self.URL.format(mbid=album.mb_albumid), match=Image.exact_match)
 
 
 
@@ -211,7 +201,7 @@ class Lyric(object): #general class for lyrics
         except requests.RequestException as exc:
             self._log.debug(u'lyrics request failed: {0}', exc)
             return
-        if r.status_code == requests.codes.ok:
+        if (r.status_code == requests.codes.ok):
             return r.text
         else:
             self._log.debug('failed to fetch: {0} ({1})', url, r.status_code)
@@ -248,7 +238,7 @@ class Genius(Lyric): #deriving genius class from lyric class
         
         json = self.search(artist, title) #Genius does not directly allow to scrape the api, first we try to get a matching url with artist name and title of the song
         #print(json) #used for debugging
-        if not json: #if search function returns None
+        if (not json): #if search function returns None
             self._log.debug('Invalid JSON')
             return None
 
@@ -282,11 +272,11 @@ class Genius(Lyric): #deriving genius class from lyric class
         [h.extract() for h in soup('script')] #Removing script tags from the html
 
         lyrics_div = soup.find("div", class_="lyrics") #find the div with the lyrics class
-        if not lyrics_div: #if can not be found
+        if (not lyrics_div): #if can not be found
             self._log.debug('Unusual song page') 
             div2 = soup.find("div", class_=re.compile("Lyrics__Container")) #Compile a regular expression pattern into a regular expression object
-            if not div2: #if can not be found
-                if soup.find("div", class_=re.compile("LyricsPlaceholder__Message"), string="This song is an instrumental"): #if a placeholder statement is found
+            if (not div2): #if can not be found
+                if (soup.find("div", class_=re.compile("LyricsPlaceholder__Message"), string="This song is an instrumental")): #if a placeholder statement is found
                     self._log.debug('Detected instrumental') #instrumental song 
                     return "[Instrumental]" #this would be stored as the lyrics 
                 else:
@@ -320,7 +310,7 @@ def clarify(html, plain_text_out=False): #cleans the content of fetched html
 
 
 def unescape(text):
-    if isinstance(text, bytes): #check if text contains bytes
+    if (isinstance(text, bytes)): #check if text contains bytes
         text = text.decode('utf-8', 'ignore') #decoding the text
     out = text.replace('&nbsp;', ' ') #replacing &nbsp with space character
     return out
@@ -329,7 +319,7 @@ def unescape(text):
                                                                         # PLUGIN #
 
 
-class graduatorPlug(BeetsPlugin, RequestLogger): #derived from BeetsPlugin and RequestLogger
+class graduatorPlug(BeetsPlugin, CoverArtSource): #derived from BeetsPlugin and RequestLogger
 
     LYRIC = ['genius'] #name of our source
     SOURCE_LYRICS = { #defining which class to call 
@@ -410,12 +400,12 @@ class graduatorPlug(BeetsPlugin, RequestLogger): #derived from BeetsPlugin and R
             items = lib.items(ui.decargs(args)) #from database we reach out to items table
             for item in items: #for each item in items table
                 self.getlyrics(lib, item, self.config['force']) #call getlyrics function with force = False
-                if item.lyrics: #if the lyrics are found
-                    if opts.printlyrics: #if there is a -p or --print option
+                if (item.lyrics): #if the lyrics are found
+                    if (opts.printlyrics): #if there is a -p or --print option
                         ui.print_(item.lyrics) #print lyrics to console
                         ui.print_("\n") #print a space character after each song
-                    if opts.writetofile:
-                        self.writetofile(lib, item, self.config['force'])
+                    if (opts.writetofile):
+                        self.writetofile(lib, item)
 
             
 
@@ -433,7 +423,7 @@ class graduatorPlug(BeetsPlugin, RequestLogger): #derived from BeetsPlugin and R
                     source.get_image(candidate, self)
                     if (candidate.validate(self)):
                         result = candidate
-                        self._log.debug(u'using {0.LOCAL_STR} image {1}'.format(source, util.displayable_path(result.path)))
+                        self._log.debug(u'using {0.placement} image {1}'.format(source, util.displayable_path(result.path)))
                         break
                 if (result):
                     break
@@ -464,13 +454,13 @@ class graduatorPlug(BeetsPlugin, RequestLogger): #derived from BeetsPlugin and R
 
     def getlyrics(self, lib, item, force): #get lyrics from web and store them in the database
 
-        if not force and item.lyrics: #if not forced and lyrics already exists
-            self._log.info('lyrics already present: {0}', item)
+        if (not force and item.lyrics): #if not forced and lyrics already exists
+            self._log.info('lyrics already exist: {0}', item)
             return
         
         lyrics = self.backends[0].fetch(item.artist, item.title) #call fetch function defined in Genius class
 
-        if lyrics: #if we find the lyrics
+        if (lyrics): #if we find the lyrics
             self._log.info('fetched lyrics: {0}', item) #print to console the artist, title, and album title
             lyrics = clarify(lyrics, True) #this function clarifies the HTML content 
         else: #if lyrics not found
@@ -481,27 +471,16 @@ class graduatorPlug(BeetsPlugin, RequestLogger): #derived from BeetsPlugin and R
         item.lyrics = lyrics.strip() #assign lyrics to item's lyrics deleting whitespaces at the beginning and at the end of the text
         item.store() #store item in the database
 
-    def writetofile(self, lib, item, force):
-        save_path = '/Users/dilanuslan/Desktop/NewMusic/'
+    def writetofile(self, lib, item):
 
-        save_path = save_path + item.albumartist + '/' + item.album
+        save_path = '/Users/dilanuslan/Desktop/NewMusic/'  #the constant part of the path
+        save_path = save_path + item.albumartist + '/' + item.album #the artist name and the album name is added to the path 
+        filename = item.title + ".txt"  #the name of the file will be the song name
 
-        filename = item.title + ".txt"  
+        finalname = os.path.join(save_path, filename) #adding filename to the path
 
-        completeName = os.path.join(save_path, filename) 
+        lyricsfile = open(finalname, "w") #creating the file for writing
+        writetofile = item.lyrics #lyrics of the song is assigned to writetofile directly from the database
+        lyricsfile.write(writetofile) #writing lyrics to the file
 
-        file1 = open(completeName, "w")
-
-        toFile = item.lyrics
-
-        file1.write(toFile)
-
-        file1.close()
-
-
-
-
-
-
-
-
+        lyricsfile.close() #closing the file
