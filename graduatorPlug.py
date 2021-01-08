@@ -189,25 +189,24 @@ class Lyric(object): #general class for lyrics
     def __init__(self, config, log):
         self._log = log
 
-    def get_url(self, url): #Retrieve the content at a given URL, or return None if the source is unreachable.
+    def get_url(self, url): #https://www.w3schools.com/python/ref_requests_response.asp
         try:
-            # Disable the InsecureRequestWarning that comes from using
-            # `verify=false`.
-            # https://github.com/kennethreitz/requests/issues/2214
-            # We're not overly worried about the NSA MITMing our lyrics scraper
-            with warnings.catch_warnings():
-                warnings.simplefilter('ignore')
-                r = requests.get(url, verify=False, headers={'User-Agent': 'USER_AGENT',})
+            #https://docs.python.org/3/library/warnings.html
+            with warnings.catch_warnings(): 
+                warnings.simplefilter('ignore') #never print matching warnings
+                req = requests.get(url, verify=False, headers={'User-Agent': 'USER_AGENT',}) 
         except requests.RequestException as exc:
-            self._log.debug(u'lyrics request failed: {0}', exc)
+            self._log.debug('request failed: {0}', exc)
             return
-        if (r.status_code == requests.codes.ok):
-            return r.text
-        else:
-            self._log.debug('failed to fetch: {0} ({1})', url, r.status_code)
 
-    def fetch(self, artist, title):
-        raise NotImplementedError()
+        #status_code returns a number that indicates the status (200 is OK, 404 is Not Found)
+        #ok returns True if status_code is less than 400, otherwise False
+
+        if (req.status_code == requests.codes.ok):
+            return req.text #Returns the content of the response, in unicode
+        else:
+            self._log.debug('failed to fetch: {0} ({1})', url, req.status_code)
+
 
 def slugify(text):
     #The unicode module exports a function that takes a string and returns a string that can be encoded to ASCII bytes in Python 3
@@ -230,11 +229,10 @@ class Genius(Lyric): #deriving genius class from lyric class
 
         #https://docs.python.org/3/library/json.html this document was really helpful for understanding json library in Python
 
-       
-        title = re.sub(r"[\(\[].*?[\)\]]", "", title)
-        duet = artist.find("feat.")
-        if(duet != -1):
-            artist = artist[0:duet]
+        title = re.sub(r"[\(\[].*?[\)\]]", "", title) #removing these characters from the song title
+        duet = artist.find("feat.") #find the index of feat.
+        if(duet != -1): #if it exists in the artist name
+            artist = artist[0:duet] #remove the feat and the rest of the artist
         
         json = self.search(artist, title) #Genius does not directly allow to scrape the api, first we try to get a matching url with artist name and title of the song
         #print(json) #used for debugging
@@ -248,7 +246,7 @@ class Genius(Lyric): #deriving genius class from lyric class
             if (slugify(hit_artist) == slugify(artist)): #if slugified artist names are equal we scrape lyrics
                 return self.scrapelyrics(self.get_url(hit["result"]["url"])) 
 
-        self._log.debug('We could not find a matching artist \'{0}\'', artist)
+        self._log.debug('No matching artist \'{0}\'', artist)
 
     def search(self, artist, title):
 
@@ -388,7 +386,7 @@ class graduatorPlug(BeetsPlugin, CoverArtSource): #derived from BeetsPlugin and 
             action='store_true', default=False,
             help='print lyrics to command line',
         )
-        command.parser.add_option(
+        command.parser.add_option( #writing lyrics to file
             '-w', '--write', dest='writetofile',
             action='store_true', default=False,
             help='write lyrics to a text file',
@@ -484,3 +482,8 @@ class graduatorPlug(BeetsPlugin, CoverArtSource): #derived from BeetsPlugin and 
         lyricsfile.write(writetofile) #writing lyrics to the file
 
         lyricsfile.close() #closing the file
+
+
+
+
+
