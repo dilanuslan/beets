@@ -374,7 +374,7 @@ class graduatorPlug(BeetsPlugin, CoverArtSource): #derived from BeetsPlugin and 
         
             items = lib.items(ui.decargs(args)) #from database we reach out to items table
             for item in items: #for each item in items table
-                self.getlyrics(lib, item, self.config['force']) #call getlyrics function with force = False
+                self.getlyrics(lib, item, opts.force) #call getlyrics function with force = False
                 if (item.lyrics): #if the lyrics are found
                     if (opts.printlyrics): #if there is a -p or --print option
                         ui.print_(item.lyrics) #print lyrics to console
@@ -409,7 +409,7 @@ class graduatorPlug(BeetsPlugin, CoverArtSource): #derived from BeetsPlugin and 
         
         for album in albums:
             if (album.artpath and not force and os.path.isfile(album.artpath)):
-                    message = ui.colorize('text_highlight_minor', 'has album art')
+                    message = ui.colorize('action', 'has album art')
                     self._log.info('{0}: {1}', album, message)  #prints out to command line 
             else:
                 if(force):
@@ -425,12 +425,12 @@ class graduatorPlug(BeetsPlugin, CoverArtSource): #derived from BeetsPlugin and 
                     message = ui.colorize('text_error', 'no art found') #print in red
                 self._log.info('{0}: {1}', album, message) #prints out to command line
 
-   
 
     def getlyrics(self, lib, item, force): #get lyrics from web and store them in the database
 
         if (not force and item.lyrics): #if not forced and lyrics already exists
-            self._log.info('lyrics already exist: {0}', item)
+            message = ui.colorize('text_highlight', 'lyrics already exist')    
+            self._log.info('{0}: {1}', message, item)  #prints out to command line 
             return
         
         lyrics = self.backends[0].fetch(item.artist, item.title) #call fetch function defined in Genius class
@@ -459,3 +459,4 @@ class graduatorPlug(BeetsPlugin, CoverArtSource): #derived from BeetsPlugin and 
         lyricsfile.write(writetofile) #writing lyrics to the file
 
         lyricsfile.close() #closing the file
+
