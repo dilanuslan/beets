@@ -27,10 +27,6 @@ from unidecode import unidecode #takes Unicode data and tries to represent it in
 
 
 class Image(object):
-    
-    bad_image = 0 #not usable
-    good_image = 1 #usable
-    exact_match = 0 #exact match
 
     def __init__(self, log, path=None, url=None, match=None, size=None): #constructor for candidate image
         self._log = log #for beetlogs.txt
@@ -38,22 +34,6 @@ class Image(object):
         self.url = url #url of the image
         self.match = match #result of checking 
         self.size = size #size of the image
-        self.check = None #checking whether the image is usable or not
-
-    #validations by the path and the size
-
-    def _validate(self, plugin):
-
-        if (not self.path):
-            return self.bad_image
-
-        if (not self.size):
-            return self.good_image
-
-    def validate(self, plugin):
-        self.check = self._validate(plugin)
-        return self.check
-
 
 #args and kwargs are used to pass an argument list to a function
 #With *args, any number of extra arguments can be tacked on to your current formal parameters
@@ -78,7 +58,9 @@ def getLog(log, *args, **kwargs): #defining the requests
     req = requests.Request('GET', *args, **request_kwargs) #We require data from the web, so 'GET' is our main request method. 
 
     #This part was inspired from https://2.python-requests.org/en/v2.8.1/user/advanced/ in order to have an efficient use of requests library.
-    #Basically, we're creating the template for our request
+    #Basically, the template for the request is created
+
+    #https://requests.readthedocs.io/en/master/_modules/requests/sessions/ used for understanding the functions
     with requests.Session() as s:
         s.headers = {'User-Agent': 'beets'}
         prepared = s.prepare_request(req)
@@ -119,7 +101,7 @@ class ArtSource(CoverArtSource):
 
                 #Download the image to a temporary file. 
                 data = resp.iter_content(chunk_size=1024) #Iterates over the response data. When stream=True is set on the request, this avoids reading the content at once into memory for large responses. The chunk size is the number of bytes it should read into memory. This is not necessarily the length of each item returned as decoding can take place. 
-                header = b'' #header will be a byte literal
+                header = '' 
                 for chunk in data:
                     header += chunk
                     if (len(header) >= 32): #we can read up to 32 bytes
@@ -167,7 +149,7 @@ class CoverArtArchive(ArtSource): #this is the main website used in the project 
 
     def get(self, album, plugin, paths): 
         if ('release' in self.match_by and album.mb_albumid): #Return the Cover Art Archive URLs using album MusicBrainz release ID.
-            yield self._candidate(url=self.URL.format(mbid=album.mb_albumid), match=Image.exact_match)
+            yield self._candidate(url=self.URL.format(mbid=album.mb_albumid))
 
 
 
@@ -356,7 +338,7 @@ class graduatorPlug(BeetsPlugin, CoverArtSource): #derived from BeetsPlugin and 
         self.config['genius_api_key'].redact = True
 
        
-    def graduatorPlug(self, session, task):
+    def graduatorPlug(self, task):
         if (task.is_album): 
             if (task.album.artpath and os.path.isfile(task.album.artpath)): #Album already has art (probably a re-import); skip it.
                 return
@@ -402,8 +384,8 @@ class graduatorPlug(BeetsPlugin, CoverArtSource): #derived from BeetsPlugin and 
                     if (opts.printlyrics): #if there is a -p or --print option
                         ui.print_(item.lyrics) #print lyrics to console
                         ui.print_("\n") #print a space character after each song
-                    if (opts.writetofile):
-                        self.writetofile(lib, item)
+                    if (opts.writetofile): #if there is a -w or --write option
+                        self.writetofile(lib, item) #writing lyrics to file
 
             
 
@@ -419,10 +401,10 @@ class graduatorPlug(BeetsPlugin, CoverArtSource): #derived from BeetsPlugin and 
                 # URLs might be invalid at this point, or the image may not fulfill the requirements
                 for candidate in source.get(album, self, paths):
                     source.get_image(candidate, self)
-                    if (candidate.validate(self)):
-                        result = candidate
-                        self._log.debug(u'using {0.placement} image {1}'.format(source, util.displayable_path(result.path)))
-                        break
+                    result = candidate
+                    self._log.debug(u'using {0.placement} image {1}'.format(source, util.displayable_path(result.path)))
+                    break
+
                 if (result):
                     break
 
@@ -482,8 +464,5 @@ class graduatorPlug(BeetsPlugin, CoverArtSource): #derived from BeetsPlugin and 
         lyricsfile.write(writetofile) #writing lyrics to the file
 
         lyricsfile.close() #closing the file
-
-
-
 
 
