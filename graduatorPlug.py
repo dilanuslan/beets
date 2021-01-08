@@ -101,7 +101,7 @@ class ArtSource(CoverArtSource):
 
                 #Download the image to a temporary file. 
                 data = resp.iter_content(chunk_size=1024) #Iterates over the response data. When stream=True is set on the request, this avoids reading the content at once into memory for large responses. The chunk size is the number of bytes it should read into memory. This is not necessarily the length of each item returned as decoding can take place. 
-                header = '' 
+                header = b'' 
                 for chunk in data:
                     header += chunk
                     if (len(header) >= 32): #we can read up to 32 bytes
@@ -139,7 +139,6 @@ class ArtSource(CoverArtSource):
 
 
 class CoverArtArchive(ArtSource): #this is the main website used in the project to get images 
-    NAME = "Cover Art Archive" #name of the website
     MATCHING_CRITERIA = ['release'] 
 
     if (util.SNI_SUPPORTED): #server name indication
@@ -348,13 +347,9 @@ class graduatorPlug(BeetsPlugin, CoverArtSource): #derived from BeetsPlugin and 
             if (candidate):
                 self.art_candidates[task] = candidate
 
-    def _set_art(self, album, candidate, delete=False):
-        album.set_art(candidate.path, delete)
-        if (self.store_source):
-            # store the source of the chosen artwork in a flexible field
-            self._log.debug("Storing art_source for {0.albumartist} - {0.album}", album)
-            album.art_source = SOURCE_NAME[type(candidate.source)]
-        album.store()
+    def setArt(self, album, candidate, delete=False):
+        album.set_art(candidate.path, delete) #this is a built-in function from beets 
+        album.store() #storing the changes in the database 
 
     def commands(self): #this function adds graduatorPlug to beets command list
         command = ui.Subcommand('graduatorPlug', help='help Dilan to graduate from ITU CE') # :)
@@ -424,7 +419,7 @@ class graduatorPlug(BeetsPlugin, CoverArtSource): #derived from BeetsPlugin and 
 
                 candidate = self.albumcover(album, localpath)
                 if (candidate): #if the album art is found
-                    self._set_art(album, candidate)
+                    self.setArt(album, candidate)
                     message = ui.colorize('text_success', 'found album art') #print in green
                 else:
                     message = ui.colorize('text_error', 'no art found') #print in red
@@ -464,5 +459,3 @@ class graduatorPlug(BeetsPlugin, CoverArtSource): #derived from BeetsPlugin and 
         lyricsfile.write(writetofile) #writing lyrics to the file
 
         lyricsfile.close() #closing the file
-
-
