@@ -35,6 +35,7 @@ class Image(object):
         self.match = match #result of checking 
         self.size = size #size of the image
 
+
 #args and kwargs are used to pass an argument list to a function
 #With *args, any number of extra arguments can be tacked on to your current formal parameters
 #**kwargs in function definitions in python is used to pass a keyworded, variable-length argument list. 
@@ -54,11 +55,15 @@ def getLog(log, *args, **kwargs): #defining the requests
         if (arg in kwargs): #if our request has one of these, we add it to send_kwargs
             send_kwargs[arg] = request_kwargs.pop(arg)
 
+    if 'message' in kwargs: #checking whether the special message is in kwargs or not
+        message = kwargs.pop('message')
+    else:
+        message = 'getting URL' #default message 
 
     req = requests.Request('GET', *args, **request_kwargs) #We require data from the web, so 'GET' is our main request method. 
 
     #This part was inspired from https://2.python-requests.org/en/v2.8.1/user/advanced/ in order to have an efficient use of requests library.
-    #Basically, the template for the request is created
+    #Basically, we're creating the template for our request
 
     #https://requests.readthedocs.io/en/master/_modules/requests/sessions/ used for understanding the functions
     with requests.Session() as s:
@@ -66,24 +71,29 @@ def getLog(log, *args, **kwargs): #defining the requests
         prepared = s.prepare_request(req)
         settings = s.merge_environment_settings(prepared.url, {}, None, None, None) #The function checks the environment and merge it with some settings.
         send_kwargs.update(settings)
+        log.debug('{}: {}', message, prepared.url)
         return s.send(prepared, **send_kwargs)
 
 
-##### COVER ART SOURCE 
+class RequestLogger(object): #Adds a Requests wrapper to the class that uses the logger
+
+    def request(self, *args, **kwargs):
+        return getLog(self._log, *args, **kwargs)
+
+
+##### COVER ART SOURCES 
 
 #this is an initial class for further definitions and logging
-class CoverArtSource(object):
+class CoverArtSource(RequestLogger):
+    MATCHING_CRITERIA = ['default']
 
     def __init__(self, log, config, match_by=None): #constructor
         self._log = log
         self._config = config
-        self.match_by = match_by  
+        self.match_by = match_by or self.MATCHING_CRITERIA #assign matching result or default definition
 
     def _candidate(self, **kwargs):
-        return Image(log=self._log, **kwargs) 
-
-    def request(self, *args, **kwargs):
-        return getLog(self._log, *args, **kwargs)
+        return Candidate(source=self, log=self._log, **kwargs) 
 
 
 #The knowledge from this website is basically used in this part of the code: https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/MIME_types
@@ -188,7 +198,6 @@ class Lyric(object): #general class for lyrics
         else:
             self._log.debug('failed to fetch: {0} ({1})', url, req.status_code)
 
-
 def slugify(text):
     #The unicode module exports a function that takes a string and returns a string that can be encoded to ASCII bytes in Python 3
     return re.sub(r'\W+', '-', unidecode(text).lower().strip()).strip('-') #we lower unicoded text and remove spaces at the beginning and end of the string, sub replaces \W+ characters in this text with -. Then we remove -'s.
@@ -229,6 +238,7 @@ class Genius(Lyric): #deriving genius class from lyric class
 
         self._log.debug('No matching artist \'{0}\'', artist)
 
+
     def search(self, artist, title):
 
         search_url = self.base_url + "/search" #obtained: https://api.genius.com/search
@@ -255,7 +265,7 @@ class Genius(Lyric): #deriving genius class from lyric class
             self._log.debug('Unusual song page') 
             div2 = soup.find("div", class_=re.compile("Lyrics__Container")) #Compile a regular expression pattern into a regular expression object
             if (not div2): #if can not be found
-                if (soup.find("div", class_=re.compile("LyricsPlaceholder__Message"), string="This song is an instrumental")): #if a placeholder statement is found
+                if soup.find("div", class_=re.compile("LyricsPlaceholder__Message"), string="This song is an instrumental"): #if a placeholder statement is found
                     self._log.debug('Detected instrumental') #instrumental song 
                     return "[Instrumental]" #this would be stored as the lyrics 
                 else:
@@ -289,7 +299,7 @@ def clarify(html, plain_text_out=False): #cleans the content of fetched html
 
 
 def unescape(text):
-    if (isinstance(text, bytes)): #check if text contains bytes
+    if isinstance(text, bytes): #check if text contains bytes
         text = text.decode('utf-8', 'ignore') #decoding the text
     out = text.replace('&nbsp;', ' ') #replacing &nbsp with space character
     return out
@@ -298,7 +308,7 @@ def unescape(text):
                                                                         # PLUGIN #
 
 
-class graduatorPlug(BeetsPlugin, CoverArtSource): #derived from BeetsPlugin and RequestLogger
+class graduatorPlug(BeetsPlugin, RequestLogger): #derived from BeetsPlugin and RequestLogger
 
     LYRIC = ['genius'] #name of our source
     SOURCE_LYRICS = { #defining which class to call 
@@ -337,7 +347,7 @@ class graduatorPlug(BeetsPlugin, CoverArtSource): #derived from BeetsPlugin and 
         self.config['genius_api_key'].redact = True
 
        
-    def graduatorPlug(self, task):
+    def graduatorPlug(self, session, task):
         if (task.is_album): 
             if (task.album.artpath and os.path.isfile(task.album.artpath)): #Album already has art (probably a re-import); skip it.
                 return
@@ -374,9 +384,9 @@ class graduatorPlug(BeetsPlugin, CoverArtSource): #derived from BeetsPlugin and 
         
             items = lib.items(ui.decargs(args)) #from database we reach out to items table
             for item in items: #for each item in items table
-                self.getlyrics(lib, item, opts.force) #call getlyrics function with force = False
-                if (item.lyrics): #if the lyrics are found
-                    if (opts.printlyrics): #if there is a -p or --print option
+                self.getlyrics(lib, item, self.config['force']) #call getlyrics function with force = False
+                if item.lyrics: #if the lyrics are found
+                    if opts.printlyrics: #if there is a -p or --print option
                         ui.print_(item.lyrics) #print lyrics to console
                         ui.print_("\n") #print a space character after each song
                     if (opts.writetofile): #if there is a -w or --write option
@@ -397,9 +407,8 @@ class graduatorPlug(BeetsPlugin, CoverArtSource): #derived from BeetsPlugin and 
                 for candidate in source.get(album, self, paths):
                     source.get_image(candidate, self)
                     result = candidate
-                    self._log.debug(u'using {0.placement} image {1}'.format(source, util.displayable_path(result.path)))
+                    self._log.debug(u'using {0.LOCAL_STR} image {1}'.format(source, util.displayable_path(result.path)))
                     break
-
                 if (result):
                     break
 
@@ -424,7 +433,7 @@ class graduatorPlug(BeetsPlugin, CoverArtSource): #derived from BeetsPlugin and 
                 else:
                     message = ui.colorize('text_error', 'no art found') #print in red
                 self._log.info('{0}: {1}', album, message) #prints out to command line
-
+   
 
     def getlyrics(self, lib, item, force): #get lyrics from web and store them in the database
 
@@ -446,8 +455,7 @@ class graduatorPlug(BeetsPlugin, CoverArtSource): #derived from BeetsPlugin and 
         item.lyrics = lyrics.strip() #assign lyrics to item's lyrics deleting whitespaces at the beginning and at the end of the text
         item.store() #store item in the database
 
-    def writetofile(self, lib, item):
-
+    def writetofile(self, lib, item, force):
         save_path = '/Users/dilanuslan/Desktop/NewMusic/'  #the constant part of the path
         save_path = save_path + item.albumartist + '/' + item.album #the artist name and the album name is added to the path 
         filename = item.title + ".txt"  #the name of the file will be the song name
