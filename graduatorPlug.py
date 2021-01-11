@@ -25,6 +25,8 @@ import html #This module defines functions to manipulate HTML.
 import json #JavaScript Object Notation 
 from unidecode import unidecode #takes Unicode data and tries to represent it in ASCII characters
 
+import musicbrainzngs
+
 
 class Image(object):
 
@@ -75,25 +77,18 @@ def getLog(log, *args, **kwargs): #defining the requests
         return s.send(prepared, **send_kwargs)
 
 
-class RequestLogger(object): #Adds a Requests wrapper to the class that uses the logger
-
-    def request(self, *args, **kwargs):
-        return getLog(self._log, *args, **kwargs)
-
-
-##### COVER ART SOURCES 
-
-#this is an initial class for further definitions and logging
-class CoverArtSource(RequestLogger):
-    MATCHING_CRITERIA = ['default']
+class CoverArtSource(object):
 
     def __init__(self, log, config, match_by=None): #constructor
         self._log = log
         self._config = config
-        self.match_by = match_by or self.MATCHING_CRITERIA #assign matching result or default definition
+        self.match_by = match_by  
 
     def _candidate(self, **kwargs):
-        return Candidate(source=self, log=self._log, **kwargs) 
+        return Image(log=self._log, **kwargs) 
+
+    def request(self, *args, **kwargs):
+        return getLog(self._log, *args, **kwargs)
 
 
 #The knowledge from this website is basically used in this part of the code: https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/MIME_types
@@ -308,7 +303,7 @@ def unescape(text):
                                                                         # PLUGIN #
 
 
-class graduatorPlug(BeetsPlugin, RequestLogger): #derived from BeetsPlugin and RequestLogger
+class graduatorPlug(BeetsPlugin, CoverArtSource): #derived from BeetsPlugin and RequestLogger
 
     LYRIC = ['genius'] #name of our source
     SOURCE_LYRICS = { #defining which class to call 
@@ -324,7 +319,6 @@ class graduatorPlug(BeetsPlugin, RequestLogger): #derived from BeetsPlugin and R
 
         cover_names = self.config['cover_names'].as_str_seq() #one of these elements in this list: ['cover', 'front', 'art', 'album', 'folder']
         self.cover_names = list(map(util.bytestring_path, cover_names)) #bytestring_path: Given a path, which is either a bytes or a unicode, returns a str path (ensuring that we never deal with Unicode pathnames).
-        self.cautious = self.config['cautious'].get(bool) #gets False from the config file
         self.store_source = self.config['store_source'].get(bool) #gets False from the config file
 
         self.src_removed = (config['import']['move'].get(bool)) #gets yes from the config file
@@ -368,6 +362,11 @@ class graduatorPlug(BeetsPlugin, RequestLogger): #derived from BeetsPlugin and R
             action='store_true', default=False,
             help='re-download art and lyrics when they already exist'
         )
+        command.parser.add_option( 
+            '-c', '--cover', dest='coverart',
+            action='store_true', default=False,
+            help='find cover arts for all releases',
+        )
         command.parser.add_option( #printing lyrics of each song to command line
             '-p', '--print', dest='printlyrics',
             action='store_true', default=False,
@@ -380,13 +379,17 @@ class graduatorPlug(BeetsPlugin, RequestLogger): #derived from BeetsPlugin and R
         )
 
         def func(lib, opts, args): #main functionalities of the plugin
-            self.finalize(lib, lib.albums(ui.decargs(args)), opts.force) 
+            #self.finalize(lib, lib.albums(ui.decargs(args)), opts.force) 
+            albums = lib.albums(ui.decargs(args)) #from database we reach out to items table
+            for album in albums:
+                if(opts.coverart):
+                    self.allreleases(lib, album)
         
             items = lib.items(ui.decargs(args)) #from database we reach out to items table
             for item in items: #for each item in items table
                 self.getlyrics(lib, item, self.config['force']) #call getlyrics function with force = False
-                if item.lyrics: #if the lyrics are found
-                    if opts.printlyrics: #if there is a -p or --print option
+                if (item.lyrics): #if the lyrics are found
+                    if (opts.printlyrics): #if there is a -p or --print option
                         ui.print_(item.lyrics) #print lyrics to console
                         ui.print_("\n") #print a space character after each song
                     if (opts.writetofile): #if there is a -w or --write option
@@ -407,7 +410,7 @@ class graduatorPlug(BeetsPlugin, RequestLogger): #derived from BeetsPlugin and R
                 for candidate in source.get(album, self, paths):
                     source.get_image(candidate, self)
                     result = candidate
-                    self._log.debug(u'using {0.LOCAL_STR} image {1}'.format(source, util.displayable_path(result.path)))
+                    self._log.debug(u'using {0.placement} image {1}'.format(source, util.displayable_path(result.path)))
                     break
                 if (result):
                     break
@@ -449,13 +452,13 @@ class graduatorPlug(BeetsPlugin, RequestLogger): #derived from BeetsPlugin and R
             lyrics = clarify(lyrics, True) #this function clarifies the HTML content 
         else: #if lyrics not found
             self._log.info('lyrics not found: {0}', item)
-            default_lyrics = self.config['default_lyrics'].get() #default_lyrics value is defined as None
+            default_lyrics = None #default_lyrics value is defined as None
             lyrics = default_lyrics
            
         item.lyrics = lyrics.strip() #assign lyrics to item's lyrics deleting whitespaces at the beginning and at the end of the text
         item.store() #store item in the database
 
-    def writetofile(self, lib, item, force):
+    def writetofile(self, lib, item):
         save_path = '/Users/dilanuslan/Desktop/NewMusic/'  #the constant part of the path
         save_path = save_path + item.albumartist + '/' + item.album #the artist name and the album name is added to the path 
         filename = item.title + ".txt"  #the name of the file will be the song name
@@ -468,3 +471,49 @@ class graduatorPlug(BeetsPlugin, RequestLogger): #derived from BeetsPlugin and R
 
         lyricsfile.close() #closing the file
 
+    def allreleases(self, lib, album):
+        musicbrainzngs.set_useragent("beets.io", "0.1", "beets.io")
+        URL = 'https://coverartarchive.org/release/'
+
+        save_path = '/Users/dilanuslan/Desktop/NewMusic/'  #the constant part of the path
+        save_path = save_path + album.albumartist + '/' + album.album #the artist name and the album name is added to the path 
+        
+
+        idlist = []
+
+        release_group_dict = musicbrainzngs.get_release_group_by_id(album.mb_releasegroupid, includes=["releases"])
+
+        for item in release_group_dict.values():
+            release_keys = item.keys()
+            key = 'release-list'
+            if key in release_keys:
+                release_list_items = item[key]
+                for dic in release_list_items:
+                    release_list_keys = dic.keys()
+                    key2 = 'id'
+                    if key2 in release_list_keys:
+                        releaseid = dic[key2]
+                        idlist.append(releaseid)
+
+        for i in range(0, len(idlist)):
+            filename = "cover{}.jpg".format(i+1)  
+
+            finalname = os.path.join(save_path, filename) #adding filename to the path
+
+            pic_url = "http://coverartarchive.org/release/{}/front".format(idlist[i])
+
+            with open(finalname, 'wb') as handle:
+                response = requests.get(pic_url, stream=True)
+
+                if not response.ok:
+                    print (response)
+                    os.remove(finalname)
+
+                for block in response.iter_content(1024):
+                    if not block:
+                        break
+
+                    handle.write(block)
+
+
+        
