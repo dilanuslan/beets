@@ -483,17 +483,20 @@ class graduatorPlug(BeetsPlugin, CoverArtSource): #derived from BeetsPlugin and 
 
         release_group_dict = musicbrainzngs.get_release_group_by_id(album.mb_releasegroupid, includes=["releases"])
 
+        base_key = 'release-count'
+
         for item in release_group_dict.values():
             release_keys = item.keys()
-            key = 'release-list'
-            if key in release_keys:
-                release_list_items = item[key]
-                for dic in release_list_items:
-                    release_list_keys = dic.keys()
-                    key2 = 'id'
-                    if key2 in release_list_keys:
-                        releaseid = dic[key2]
-                        idlist.append(releaseid)
+            if item[base_key] > 1 :
+                key = 'release-list'
+                if key in release_keys:
+                    release_list_items = item[key]
+                    for dic in release_list_items:
+                        release_list_keys = dic.keys()
+                        key2 = 'id'
+                        if key2 in release_list_keys:
+                            releaseid = dic[key2]
+                            idlist.append(releaseid)
 
         for i in range(0, len(idlist)):
             filename = "cover{}.jpg".format(i+1)  
@@ -502,7 +505,7 @@ class graduatorPlug(BeetsPlugin, CoverArtSource): #derived from BeetsPlugin and 
 
             pic_url = "http://coverartarchive.org/release/{}/front".format(idlist[i])
 
-            with open(finalname, 'wb') as handle:
+            with open(finalname, 'wb') as cover:
                 response = requests.get(pic_url, stream=True)
 
                 if not response.ok:
@@ -513,7 +516,8 @@ class graduatorPlug(BeetsPlugin, CoverArtSource): #derived from BeetsPlugin and 
                     if not block:
                         break
 
-                    handle.write(block)
+                    cover.write(block)
 
 
         
+    
