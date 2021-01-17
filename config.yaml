@@ -12,14 +12,10 @@ pluginpath: ~/Desktop/PLUGIN/beetsplug
 graduatorPlug:
     auto: True
     force: False
-    minwidth: 0
     maxwidth: 2000
-    quality: 0
-    cautious: False
     cover_names: ['cover']
     source: ['coverart']
     lyric: ['genius']
-    default_lyrics: None
     force: False
     local: False
     store_source: False
