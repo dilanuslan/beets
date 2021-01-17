@@ -4,11 +4,11 @@ Hello world,
 
 This is my project for graduating from Istanbul Technical University Computer Engineering department.
 
-We're dealing with such crazy times nowadays and hopefully we will leave these days behind with the least damage.
+We're dealing with such crazy times nowadays and hopefully we will leave these days behind with the least damage. I have clearly seen that life is all about the things that happen while we do plans. 
 
-I have clearly seen that life is all about the things that happen while we do plans. So I need to take responsibility for my mistakes. The most important thing is to be grateful for each and every day of our lives. This quarantine process made me a totally new person. I'm not going to take this project and my school for granted. 
+I was so insecure about programming throughout my college years but thanks to this project and quarantine, I made a huge progress and I'm proud of myself. It is an honour for me to announce that I came to the end of development process of this plugin. I will add test cases and comment lines to files. 
 
-Hopefully, this time everything will work just fine and I will end up with a happy ending. 
+Hopefully, one month from today I will be able to call myself a computer engineer. I'm looking forward to dedicating myself and respecting to my job. 
 
 Please do something everyday to make your future-self proud and thankful.
 
