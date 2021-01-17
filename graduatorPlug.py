@@ -26,6 +26,7 @@ import json #JavaScript Object Notation
 from unidecode import unidecode #takes Unicode data and tries to represent it in ASCII characters
 
 import musicbrainzngs
+from wordcloud import WordCloud
 
 
 class Image(object):
@@ -471,6 +472,24 @@ class graduatorPlug(BeetsPlugin, CoverArtSource): #derived from BeetsPlugin and 
 
         lyricsfile.close() #closing the file
 
+        all_words = ''
+
+        f = open(finalname, "rb")
+        for sentence in f.readlines():
+            this_sentence = sentence.decode('utf-8')
+            all_words += this_sentence
+
+        word_cloud = WordCloud(width=1000, height=500).generate(all_words.lower())
+
+        save_path2 = '/Users/dilanuslan/Desktop/NewMusic/wordclouds/' 
+        filename2 = item.artist + ".png"
+        finalname2 = os.path.join(save_path2, filename2)   
+        word_cloud.to_file(finalname2)
+        image = word_cloud.to_image()
+
+        f.close()
+
+
     def allreleases(self, lib, album):
         musicbrainzngs.set_useragent("beets.io", "0.1", "beets.io")
         URL = 'https://coverartarchive.org/release/'
@@ -518,6 +537,4 @@ class graduatorPlug(BeetsPlugin, CoverArtSource): #derived from BeetsPlugin and 
 
                     cover.write(block)
 
-
-        
-    
+                    
