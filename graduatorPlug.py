@@ -25,8 +25,8 @@ import html #This module defines functions to manipulate HTML.
 import json #JavaScript Object Notation 
 from unidecode import unidecode #takes Unicode data and tries to represent it in ASCII characters
 
-import musicbrainzngs
-from wordcloud import WordCloud
+import musicbrainzngs #this library is used to reach Musicbrainz API directly to find all releases
+from wordcloud import WordCloud #used for creating wordclouds of albums
 
 
 class Image(object):
@@ -352,19 +352,20 @@ class graduatorPlug(BeetsPlugin, CoverArtSource): #derived from BeetsPlugin and 
             if (candidate):
                 self.art_candidates[task] = candidate
 
-    def setArt(self, album, candidate, delete=False):
-        album.set_art(candidate.path, delete) #this is a built-in function from beets 
-        album.store() #storing the changes in the database 
-
     def commands(self): #this function adds graduatorPlug to beets command list
         command = ui.Subcommand('graduatorPlug', help='help Dilan to graduate from ITU CE') # :)
-        command.parser.add_option( #adding printing and forcing options to our plugin
-            '-f', '--force', dest='force',  
-            action='store_true', default=False,
-            help='re-download art and lyrics when they already exist'
-        )
-        command.parser.add_option( 
+        command.parser.add_option( #finding cover arts
             '-c', '--cover', dest='coverart',
+            action='store_true', default=False,
+            help='find cover arts of albums',
+        )
+        command.parser.add_option( #finding lyrics
+            '-l', '--lyric', dest='lyrics',
+            action='store_true', default=False,
+            help='find lyrics of the songs',
+        )
+        command.parser.add_option( #finding cover arts for all releases
+            '-a', '--all', dest='allreleases',
             action='store_true', default=False,
             help='find cover arts for all releases',
         )
@@ -380,23 +381,37 @@ class graduatorPlug(BeetsPlugin, CoverArtSource): #derived from BeetsPlugin and 
         )
 
         def func(lib, opts, args): #main functionalities of the plugin
-            #self.finalize(lib, lib.albums(ui.decargs(args)), opts.force) 
+            print("\n")
+            print("Please run the command with one of the following options: ")
+            print("-c or --cover for finding the album cover")
+            print("-l or --lyric for finding lyrics")
+            print("-a or --all for finding the cover arts for all releases")
+            print("-p or --print for printing lyrics to command line")
+            print("-w or --write for writing lyrics to a file and creating a word cloud")
+            print("\n\n")
+
+            if(opts.coverart):
+                self.finalize(lib, lib.albums(ui.decargs(args))) 
+
             albums = lib.albums(ui.decargs(args)) #from database we reach out to items table
             for album in albums:
-                if(opts.coverart):
+                if(opts.allreleases):
                     self.allreleases(lib, album)
-        
+
+            if(opts.lyrics):
+                self.getlyrics(lib, item) #call getlyrics function 
+
             items = lib.items(ui.decargs(args)) #from database we reach out to items table
+
             for item in items: #for each item in items table
-                self.getlyrics(lib, item, self.config['force']) #call getlyrics function with force = False
+                
                 if (item.lyrics): #if the lyrics are found
                     if (opts.printlyrics): #if there is a -p or --print option
                         ui.print_(item.lyrics) #print lyrics to console
                         ui.print_("\n") #print a space character after each song
                     if (opts.writetofile): #if there is a -w or --write option
                         self.writetofile(lib, item) #writing lyrics to file
-
-            
+         
 
         command.func = func #assign our functionalities
         return [command] #our command is working now
@@ -418,30 +433,28 @@ class graduatorPlug(BeetsPlugin, CoverArtSource): #derived from BeetsPlugin and 
 
         return result
 
-    def finalize(self, lib, albums, force): #Get album cover for each of the albums. This implements the graduatorPlug CLI command.
+    def finalize(self, lib, albums): #Get album cover for each of the albums. This implements the graduatorPlug CLI command.
         
         for album in albums:
-            if (album.artpath and not force and os.path.isfile(album.artpath)):
+            if (album.artpath and os.path.isfile(album.artpath)):
                     message = ui.colorize('action', 'has album art')
                     self._log.info('{0}: {1}', album, message)  #prints out to command line 
             else:
-                if(force):
-                    localpath = None
-                else:
-                    localpath = [album.path]
+                localpath = [album.path]
 
                 candidate = self.albumcover(album, localpath)
                 if (candidate): #if the album art is found
-                    self.setArt(album, candidate)
+                    album.set_art(candidate.path) #this is a built-in function from beets 
+                    album.store() #storing the changes in the database 
                     message = ui.colorize('text_success', 'found album art') #print in green
                 else:
                     message = ui.colorize('text_error', 'no art found') #print in red
                 self._log.info('{0}: {1}', album, message) #prints out to command line
    
 
-    def getlyrics(self, lib, item, force): #get lyrics from web and store them in the database
+    def getlyrics(self, lib, item): #get lyrics from web and store them in the database
 
-        if (not force and item.lyrics): #if not forced and lyrics already exists
+        if (item.lyrics): #if lyrics already exists
             message = ui.colorize('text_highlight', 'lyrics already exist')    
             self._log.info('{0}: {1}', message, item)  #prints out to command line 
             return
@@ -457,6 +470,7 @@ class graduatorPlug(BeetsPlugin, CoverArtSource): #derived from BeetsPlugin and 
             lyrics = default_lyrics
            
         item.lyrics = lyrics.strip() #assign lyrics to item's lyrics deleting whitespaces at the beginning and at the end of the text
+        item.lyrics = re.sub(r"[\(\[].*?[\)\]]", "", item.lyrics)
         item.store() #store item in the database
 
     def writetofile(self, lib, item):
@@ -472,17 +486,25 @@ class graduatorPlug(BeetsPlugin, CoverArtSource): #derived from BeetsPlugin and 
 
         lyricsfile.close() #closing the file
 
-        all_words = ''
+        #this part was inspired from: https://github.com/kvsingh/lyrics-sentiment-analysis/blob/master/wordclouds.py
+
+        words = ''
 
         f = open(finalname, "rb")
-        for sentence in f.readlines():
-            this_sentence = sentence.decode('utf-8')
-            all_words += this_sentence
+        for s in f.readlines():
+            sentence = s.decode('utf-8')
+            #converted Turkish characters to English for a better visual
+            sentence = re.sub('İ', 'I', sentence) 
+            sentence = re.sub('Ş', 'S', sentence)
+            sentence = re.sub('Ç', 'C', sentence)
+            sentence = re.sub('Ö', 'O', sentence)
+            words += sentence
 
-        word_cloud = WordCloud(width=1000, height=500).generate(all_words.lower())
+
+        word_cloud = WordCloud(width=1000, height=500).generate(words.lower())
 
         save_path2 = '/Users/dilanuslan/Desktop/NewMusic/wordclouds/' 
-        filename2 = item.artist + ".png"
+        filename2 = item.albumartist + ".png"
         finalname2 = os.path.join(save_path2, filename2)   
         word_cloud.to_file(finalname2)
         image = word_cloud.to_image()
@@ -496,7 +518,10 @@ class graduatorPlug(BeetsPlugin, CoverArtSource): #derived from BeetsPlugin and 
 
         save_path = '/Users/dilanuslan/Desktop/NewMusic/'  #the constant part of the path
         save_path = save_path + album.albumartist + '/' + album.album #the artist name and the album name is added to the path 
-        
+
+        print ("Checking all releases for {}").format(album.album)
+
+        ##this block creates a list that contains the musicbrainz id's of all releases of an album 
 
         idlist = []
 
@@ -517,6 +542,9 @@ class graduatorPlug(BeetsPlugin, CoverArtSource): #derived from BeetsPlugin and 
                             releaseid = dic[key2]
                             idlist.append(releaseid)
 
+
+        ##this block makes a query for each id in the list, if the response turns ok the cover is downloaded to a file in the album's directory.
+
         for i in range(0, len(idlist)):
             filename = "cover{}.jpg".format(i+1)  
 
@@ -528,7 +556,6 @@ class graduatorPlug(BeetsPlugin, CoverArtSource): #derived from BeetsPlugin and 
                 response = requests.get(pic_url, stream=True)
 
                 if not response.ok:
-                    print (response)
                     os.remove(finalname)
 
                 for block in response.iter_content(1024):
@@ -537,4 +564,6 @@ class graduatorPlug(BeetsPlugin, CoverArtSource): #derived from BeetsPlugin and 
 
                     cover.write(block)
 
-                    
+
+
+        
