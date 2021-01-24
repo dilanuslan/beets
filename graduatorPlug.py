@@ -28,6 +28,8 @@ from unidecode import unidecode #takes Unicode data and tries to represent it in
 import musicbrainzngs #this library is used to reach Musicbrainz API directly to find all releases
 from wordcloud import WordCloud #used for creating wordclouds of albums
 
+import unittest
+
 
 class Image(object):
 
@@ -94,9 +96,6 @@ class CoverArtSource(object):
 
 #The knowledge from this website is basically used in this part of the code: https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/MIME_types
 
-class ArtSource(CoverArtSource):
-    placement = 'remote'  
-
     def get_image(self, candidate, plugin): #Downloads an image from an URL and checks whether it is an image or not. If so, returns a path to the downloaded image. Otherwise, returns None.
       
         if (plugin.maxwidth):
@@ -144,7 +143,8 @@ class ArtSource(CoverArtSource):
             return
 
 
-class CoverArtArchive(ArtSource): #this is the main website used in the project to get images 
+
+class CoverArtArchive(CoverArtSource): #this is the main website used in the project to get images 
     MATCHING_CRITERIA = ['release'] 
 
     if (util.SNI_SUPPORTED): #server name indication
@@ -398,12 +398,12 @@ class graduatorPlug(BeetsPlugin, CoverArtSource): #derived from BeetsPlugin and 
                 if(opts.allreleases):
                     self.allreleases(lib, album)
 
-            if(opts.lyrics):
-                self.getlyrics(lib, item) #call getlyrics function 
-
             items = lib.items(ui.decargs(args)) #from database we reach out to items table
 
             for item in items: #for each item in items table
+
+                if(opts.lyrics):
+                    self.getlyrics(lib, item) #call getlyrics function 
                 
                 if (item.lyrics): #if the lyrics are found
                     if (opts.printlyrics): #if there is a -p or --print option
@@ -426,7 +426,7 @@ class graduatorPlug(BeetsPlugin, CoverArtSource): #derived from BeetsPlugin and 
                 for candidate in source.get(album, self, paths):
                     source.get_image(candidate, self)
                     result = candidate
-                    self._log.debug(u'using {0.placement} image {1}'.format(source, util.displayable_path(result.path)))
+                    self._log.debug(u'using image {0}'.format(util.displayable_path(result.path)))
                     break
                 if (result):
                     break
@@ -566,4 +566,5 @@ class graduatorPlug(BeetsPlugin, CoverArtSource): #derived from BeetsPlugin and 
 
 
 
-        
+
+    
