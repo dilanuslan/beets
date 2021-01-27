@@ -13,12 +13,11 @@ graduatorPlug:
     auto: True
     force: False
     maxwidth: 2000
-    cover_names: ['cover']
+    cover_name: ['cover']
     source: ['coverart']
     lyric: ['genius']
     force: False
     local: False
-    store_source: False
     high_resolution: False
     genius_api_key: ####genius api key should not be shared
    
