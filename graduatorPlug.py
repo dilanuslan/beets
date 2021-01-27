@@ -13,7 +13,6 @@ import requests #this library allows to make requests like get, post, etc.
 from contextlib import closing #returns a context manager that closes a page upon completion of the block
 from tempfile import NamedTemporaryFile #the file is guaranteed to have a visible name in the file system
 
-from mediafile import image_mime_type #this library belongs to beets and it is installed by pip, used for declaring the MIME type
 from beets.util.artresizer import ArtResizer #artresizer also belongs to beets and it is used as a helper for this project
 
 from beets.util import bytestring_path #this is used for setting the file paths  
@@ -100,48 +99,33 @@ class CoverArtSource(object):
       
         if (plugin.maxwidth):
             candidate.url = ArtResizer.shared.proxy_url(plugin.maxwidth, candidate.url) #Modifies an image URL according the method, returning a new URL. For WEBPROXY, a URL on the proxy server is returned. Otherwise, the URL is returned unmodified.
-        try:
-            with closing(self.request(candidate.url, stream=True)) as resp:
-                content_type = resp.headers.get('Content-Type', None) #content type should be either jpg or png
 
-                #Download the image to a temporary file. 
-                data = resp.iter_content(chunk_size=1024) #Iterates over the response data. When stream=True is set on the request, this avoids reading the content at once into memory for large responses. The chunk size is the number of bytes it should read into memory. This is not necessarily the length of each item returned as decoding can take place. 
-                header = b'' 
-                for chunk in data:
-                    header += chunk
-                    if (len(header) >= 32): #we can read up to 32 bytes
-                        break
-                else: #server could not return any data
+        with closing(self.request(candidate.url, stream=True)) as response:
+            content_type = response.headers.get('Content-Type', None) #content type should be either jpg or png
+
+            #Download the image to a temporary file. 
+            data = response.iter_content(chunk_size=1024) #Iterates over the response data. When stream=True is set on the request, this avoids reading the content at once into memory for large responses. The chunk size is the number of bytes it should read into memory. This is not necessarily the length of each item returned as decoding can take place. 
+            header = b'' 
+            for d in data:
+                header += d
+                if (len(header) >= 32): #we can read up to 32 bytes
+                    break
+                else: 
                     return
 
-
-                #function definition of image_mime_type will be given in the final report
-
-                realcontenttype = image_mime_type(header) # This checks for a jpeg file with only the magic bytes (unrecognized by imghdr.what). imghdr.what returns none for that type of file, so_wider_test_jpeg is run in that case. It still returns None if it didn't match such a jpeg file.
-                if (realcontenttype is None): #if image_mime_type return None, content type is assigned to realcontenttype
-                    realcontenttype = content_type
-
-                if (realcontenttype not in IMAGE_TYPES): #if the content type is not jpg or png, it is logged
-                    self._log.debug('not a supported image: {}', realcontenttype or 'unknown content type')
-                    return
-
-                extension = b'.' + IMAGE_TYPES[realcontenttype][0] #extension will be either .jpg or .png
-
-                if (realcontenttype != content_type): 
-                    self._log.warning('Server specified {}, but returned a {} image. Correcting the extension to {}', content_type, realcontenttype, extension)
-
-                with NamedTemporaryFile(suffix=extension, delete=False) as file:
-                    file.write(header)  #write the first already loaded part of the image
-                    for chunk in data:  #download the remaining part of the image
-                        file.write(chunk)
-                self._log.debug('downloaded art to: {0}', util.displayable_path(file.name)) #logging the download operation
-                candidate.path = util.bytestring_path(file.name) #path of the candidate image is assigned using the bytestring_path function
+            if (content_type not in IMAGE_TYPES): #if the content type is not jpg or png, it is logged
+                self._log.debug('not a supported image: {}', content_type or 'unknown content type')
                 return
 
-        except (IOError, requests.RequestException, TypeError) as exception: #if there is an error with downloading the image this code block will run
-            self._log.debug('error downloading image: {}', exception)
-            return
+            extension = b'.' + IMAGE_TYPES[content_type][0] #extension will be either .jpg or .png
 
+            with NamedTemporaryFile(suffix=extension, delete=False) as file:
+                file.write(header)  #write the first already loaded part of the image
+                for i in data:  #download the remaining part of the image
+                    file.write(i)
+            self._log.debug('downloaded art to: {0}', util.displayable_path(file.name)) #logging the download operation
+            candidate.path = util.bytestring_path(file.name) #path of the candidate image is assigned using the bytestring_path function
+            return
 
 
 class CoverArtArchive(CoverArtSource): #this is the main website used in the project to get images 
@@ -153,7 +137,7 @@ class CoverArtArchive(CoverArtSource): #this is the main website used in the pro
         URL = 'http://coverartarchive.org/release/{mbid}/front'
 
     def get(self, album, plugin, paths): 
-        if ('release' in self.match_by and album.mb_albumid): #Return the Cover Art Archive URLs using album MusicBrainz release ID.
+        if (album.mb_albumid): #Return the Cover Art Archive URLs using album MusicBrainz release ID.
             yield self._candidate(url=self.URL.format(mbid=album.mb_albumid))
 
 
@@ -163,13 +147,11 @@ SOURCE = ['coverart'] #album covers are taken from coverartarchive.org
 ART_SOURCE = {
     'coverart': CoverArtArchive  
 }
-SOURCE_NAME = {a: b for b, a in ART_SOURCE.items()}
 
 IMAGE_TYPES = { #the retrieved images should be in these formats
     'image/jpeg': [b'jpg', b'jpeg'], #b indicates byte literals
     'image/png': [b'png']
 }
-IMAGE_EXTENSIONS = [img for imgs in IMAGE_TYPES.values() for img in imgs]
 
 
 class Lyric(object): #general class for lyrics
@@ -314,15 +296,10 @@ class graduatorPlug(BeetsPlugin, CoverArtSource): #derived from BeetsPlugin and 
     def __init__(self): #constructor
         super(graduatorPlug, self).__init__()
 
-        self.art_candidates = {}  #Holds candidates corresponding to downloaded images between fetching them and placing them in the filesystem.
-
         self.maxwidth = self.config['maxwidth'].get(int) #it can be up to 2000 as defined in config.yaml
 
-        cover_names = self.config['cover_names'].as_str_seq() #one of these elements in this list: ['cover', 'front', 'art', 'album', 'folder']
-        self.cover_names = list(map(util.bytestring_path, cover_names)) #bytestring_path: Given a path, which is either a bytes or a unicode, returns a str path (ensuring that we never deal with Unicode pathnames).
-        self.store_source = self.config['store_source'].get(bool) #gets False from the config file
-
-        self.src_removed = (config['import']['move'].get(bool)) #gets yes from the config file
+        cover_name = self.config['cover_name'].as_str_seq() #one of these elements in this list: ['cover', 'front', 'art', 'album', 'folder']
+        self.cover_name = list(map(util.bytestring_path, cover_name)) #bytestring_path: Given a path, which is either a bytes or a unicode, returns a str path (ensuring that we never deal with Unicode pathnames).
 
         if (self.config['auto']): #importing our plugin
             self.import_stages = [self.graduatorPlug]
@@ -330,27 +307,17 @@ class graduatorPlug(BeetsPlugin, CoverArtSource): #derived from BeetsPlugin and 
         available_source = list(SOURCE) #putting our source into a list
         
         available_source = [(s, c) for s in available_source for c in ART_SOURCE[s].MATCHING_CRITERIA] #creating a list as [(CoverArtArchive, release)]
-        source = plugins.sanitize_pairs(self.config['source'].as_pairs(default_value='*'), available_source) 
  
-        self.source = [ART_SOURCE[s](self._log, self.config, match_by=[c]) for s, c in source]
+        self.source = [ART_SOURCE[s](self._log, self.config, match_by=[c]) for s, c in available_source]
 
 
         available_sources = list(self.LYRIC)
-        sources = plugins.sanitize_choices(self.config['lyric'].as_str_seq(), available_sources)
-        self.backends = [self.SOURCE_LYRICS[i](self.config, self._log) for i in sources]
+
+        self.backends = [self.SOURCE_LYRICS[i](self.config, self._log) for i in available_sources]
 
         self.config['genius_api_key'].redact = True
 
-       
-    def graduatorPlug(self, session, task):
-        if (task.is_album): 
-            if (task.album.artpath and os.path.isfile(task.album.artpath)): #Album already has art (probably a re-import); skip it.
-                return
 
-            candidate = self.albumcover(task.album, task.paths)
-
-            if (candidate):
-                self.art_candidates[task] = candidate
 
     def commands(self): #this function adds graduatorPlug to beets command list
         command = ui.Subcommand('graduatorPlug', help='help Dilan to graduate from ITU CE') # :)
@@ -391,7 +358,8 @@ class graduatorPlug(BeetsPlugin, CoverArtSource): #derived from BeetsPlugin and 
             print("\n\n")
 
             if(opts.coverart):
-                self.finalize(lib, lib.albums(ui.decargs(args))) 
+                self.graduatorPlug(lib, lib.albums(ui.decargs(args))) 
+                print("\n")
 
             albums = lib.albums(ui.decargs(args)) #from database we reach out to items table
             for album in albums:
@@ -411,34 +379,32 @@ class graduatorPlug(BeetsPlugin, CoverArtSource): #derived from BeetsPlugin and 
                         ui.print_("\n") #print a space character after each song
                     if (opts.writetofile): #if there is a -w or --write option
                         self.writetofile(lib, item) #writing lyrics to file
+                        print("\n")
          
 
         command.func = func #assign our functionalities
         return [command] #our command is working now
 
     def albumcover(self, album, paths):  #Given an Album object, returns a path to downloaded art for the album (or None if no art is found).  
-        result = None
+        result = None      
+        # URLs might be invalid at this point, or the image may not fulfill the requirements
+        for candidate in self.source[0].get(album, self, paths):
+            self.source[0].get_image(candidate, self)
+            result = candidate
+            self._log.debug(u'using image {0}'.format(util.displayable_path(result.path)))
+            break
 
-        for source in self.source:
-            
-                self._log.debug('trying source {0} for album {1.albumartist} - {1.album}', SOURCE_NAME[type(source)], album)
-                # URLs might be invalid at this point, or the image may not fulfill the requirements
-                for candidate in source.get(album, self, paths):
-                    source.get_image(candidate, self)
-                    result = candidate
-                    self._log.debug(u'using image {0}'.format(util.displayable_path(result.path)))
-                    break
-                if (result):
-                    break
+        if (result):
+            return result
+        else:
+            return None
 
-        return result
-
-    def finalize(self, lib, albums): #Get album cover for each of the albums. This implements the graduatorPlug CLI command.
+    def graduatorPlug(self, lib, albums): #Get album cover for each of the albums. This implements the graduatorPlug CLI command.
         
         for album in albums:
             if (album.artpath and os.path.isfile(album.artpath)):
-                    message = ui.colorize('action', 'has album art')
-                    self._log.info('{0}: {1}', album, message)  #prints out to command line 
+                message = ui.colorize('action', 'already has album art')
+                self._log.info('{0}: {1}', album, message)  #prints out to command line 
             else:
                 localpath = [album.path]
 
@@ -448,7 +414,7 @@ class graduatorPlug(BeetsPlugin, CoverArtSource): #derived from BeetsPlugin and 
                     album.store() #storing the changes in the database 
                     message = ui.colorize('text_success', 'found album art') #print in green
                 else:
-                    message = ui.colorize('text_error', 'no art found') #print in red
+                    message = ui.colorize('text_error', 'cover art not found') #print in red
                 self._log.info('{0}: {1}', album, message) #prints out to command line
    
 
@@ -462,10 +428,12 @@ class graduatorPlug(BeetsPlugin, CoverArtSource): #derived from BeetsPlugin and 
         lyrics = self.backends[0].fetch(item.artist, item.title) #call fetch function defined in Genius class
 
         if (lyrics): #if we find the lyrics
-            self._log.info('fetched lyrics: {0}', item) #print to console the artist, title, and album title
+            message = ui.colorize('text_success', 'fetched lyrics')    
+            self._log.info('{0}: {1}', message, item)  #prints out to command line 
             lyrics = clarify(lyrics, True) #this function clarifies the HTML content 
         else: #if lyrics not found
-            self._log.info('lyrics not found: {0}', item)
+            message = ui.colorize('text_error', 'lyrics not found')    
+            self._log.info('{0}: {1}', message, item)  #prints out to command line 
             default_lyrics = None #default_lyrics value is defined as None
             lyrics = default_lyrics
            
@@ -568,3 +536,4 @@ class graduatorPlug(BeetsPlugin, CoverArtSource): #derived from BeetsPlugin and 
 
 
     
+
