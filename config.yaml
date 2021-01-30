@@ -6,10 +6,10 @@ import:
     move: yes
     log: beetslog.txt
 
-plugins: graduatorPlug 
+plugins: metadata_retriever 
 pluginpath: ~/Desktop/PLUGIN/beetsplug
 
-graduatorPlug:
+metadata_retriever:
     auto: True
     force: False
     maxwidth: 2000
