@@ -24,30 +24,6 @@ from coverart import *
 from getlyrics import *
 
 
-def clarify(html, plain_text_out=False): #cleans the content of fetched html
-   
-    html = unescape(html) #call unescape function
-
-    html = html.replace('\r', '\n')  #Normalize end of lines.
-    html = re.sub(r' +', ' ', html)  #r is used for creating a raw string. Return the string obtained by replacing the leftmost non-overlapping occurrences of pattern in string by the replacement. Here whitespaces collapse.
-    html = re.sub(r'(?s)<(script).*?</\1>', '', html)  #Stripping script tags.
-    html = re.sub(u'\u2005', " ", html)  #replacing unicode with regular space
-
-    return html
-
-
-def unescape(text):
-    if isinstance(text, bytes): #check if text contains bytes
-        text = text.decode('utf-8', 'ignore') #decoding the text
-    out = text.replace('&nbsp;', ' ') #replacing &nbsp with space character
-    return out
-
-
-
-
-                                                                        # PLUGIN #
-
-
 class metadata_retriever(BeetsPlugin): #derived from BeetsPlugin and RequestLogger
 
     LYRIC = ['genius'] #name of our source
@@ -129,7 +105,6 @@ class metadata_retriever(BeetsPlugin): #derived from BeetsPlugin and RequestLogg
             for album in albums:
                 if(opts.allreleases):
                     self.allreleases(lib, album)
-                    print("\n")
 
             items = lib.items(ui.decargs(args)) #from database we reach out to items table
 
@@ -187,10 +162,10 @@ class metadata_retriever(BeetsPlugin): #derived from BeetsPlugin and RequestLogg
         
         lyrics = self.backends[0].fetch(item.artist, item.title) #call fetch function defined in Genius class
 
+
         if (lyrics): #if we find the lyrics
             message = ui.colorize('text_success', 'fetched lyrics')    
             self._log.info('{0}: {1}', message, item)  #prints out to command line 
-            lyrics = clarify(lyrics, True) #this function clarifies the HTML content 
         else: #if lyrics not found
             message = ui.colorize('text_error', 'lyrics not found')    
             self._log.info('{0}: {1}', message, item)  #prints out to command line 
@@ -209,15 +184,12 @@ class metadata_retriever(BeetsPlugin): #derived from BeetsPlugin and RequestLogg
 
         finalname = os.path.join(save_path, filename) #adding filename to the path
 
-        if(os.path.exists(finalname)):
-            return 
-        else:
 
-            lyricsfile = open(finalname, "w") #creating the file for writing
-            writetofile = item.lyrics #lyrics of the song is assigned to writetofile directly from the database
-            lyricsfile.write(writetofile) #writing lyrics to the file
+        lyricsfile = open(finalname, "w") #creating the file for writing
+        writetofile = item.lyrics #lyrics of the song is assigned to writetofile directly from the database
+        lyricsfile.write(writetofile) #writing lyrics to the file
 
-            lyricsfile.close() #closing the file
+        lyricsfile.close() #closing the file
 
         #this part was inspired from: https://github.com/kvsingh/lyrics-sentiment-analysis/blob/master/wordclouds.py
 
@@ -239,11 +211,9 @@ class metadata_retriever(BeetsPlugin): #derived from BeetsPlugin and RequestLogg
         save_path2 = '/Users/dilanuslan/Desktop/NewMusic/wordclouds/' 
         filename2 = item.albumartist + ".png"
         finalname2 = os.path.join(save_path2, filename2)  
-        if(os.path.exists(finalname2)):
-            return 
-        else:
-            word_cloud.to_file(finalname2)
-            image = word_cloud.to_image()
+      
+        word_cloud.to_file(finalname2)
+        image = word_cloud.to_image()
 
         f.close()
 
@@ -289,17 +259,21 @@ class metadata_retriever(BeetsPlugin): #derived from BeetsPlugin and RequestLogg
 
             finalname = os.path.join(save_path, filename) #adding filename to the path
 
-            pic_url = "http://coverartarchive.org/release/{}/front".format(idlist[i])
+            if(os.path.exists(finalname)):
+                return 
+            else:
 
-            with open(finalname, 'wb') as cover:
-                response = requests.get(pic_url, stream=True)
+                pic_url = "http://coverartarchive.org/release/{}/front".format(idlist[i])
 
-                if not response.ok:
-                    os.remove(finalname)
+                with open(finalname, 'wb') as cover:
+                    response = requests.get(pic_url, stream=True)
 
-                for block in response.iter_content(1024):
-                    if not block:
-                        break
+                    if not response.ok:
+                        os.remove(finalname)
 
-                    cover.write(block)
+                    for block in response.iter_content(1024):
+                        if not block:
+                            break
+
+                        cover.write(block)
 
